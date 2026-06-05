@@ -12,16 +12,17 @@ st.set_page_config(
 # Estilos CSS personalizados para replicar la estética
 st.markdown("""
     <style>
-    .main-title { font-size: 32px; font-weight: bold; color: #1E293B; margin-bottom: 20px; }
-    .metric-box { padding: 10px; border-radius: 5px; text-align: center; font-weight: bold; margin: 5px; }
+    .main-title { font-size: 26px; font-weight: bold; color: #1E293B; margin-bottom: 5px; margin-top: -20px; }
+    .sub-title { font-size: 20px; font-weight: bold; color: #334155; margin-bottom: 15px; }
+    .metric-box { padding: 8px; border-radius: 5px; text-align: center; font-weight: bold; margin: 5px; }
     .promotor { background-color: #D4EDDA; color: #155724; border: 1px solid #C3E6CB; }
     .neutro { background-color: #FFF3CD; color: #856404; border: 1px solid #FFEEBA; }
     .detractor { background-color: #F8D7DA; color: #721C24; border: 1px solid #F5C6CB; }
-    .muestra-box { background-color: #F1F5F9; border: 1px solid #CBD5E1; border-radius: 8px; padding: 20px; text-align: center; }
+    .muestra-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; text-align: center; }
     </style>
 """, unsafe_allow_html=True)
 
-# URL pública de Google Sheets corregida para exportación directa en CSV
+# URL pública de Google Sheets
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 
 # Mapeo de meses en español
@@ -30,20 +31,17 @@ MESES_ES = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-@st.cache_data(ttl=600)  # Se actualiza cada 10 minutos
+@st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(SHEET_URL)
-    # Limpieza de espacios en los nombres de las columnas
     df.columns = df.columns.str.strip()
     
-    # Procesar la fecha dinámicamente
     if 'Fecha de la Encuesta' in df.columns:
         df['Fecha_Clean'] = pd.to_datetime(df['Fecha de la Encuesta'], errors='coerce')
         df['Año'] = df['Fecha_Clean'].dt.year.fillna(2026).astype(int)
         df['Mes_Num'] = df['Fecha_Clean'].dt.month.fillna(1).astype(int)
         df['Mes'] = df['Mes_Num'].map(MESES_ES)
     else:
-        # Fallback en caso de que la columna no se llame idéntica
         df['Año'] = 2026
         df['Mes'] = "Mayo"
         
@@ -52,15 +50,14 @@ def load_data():
 try:
     df_raw = load_data()
 except Exception as e:
-    st.error(f"Error al conectar con la base de datos de Google Sheets: {e}")
+    st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
 
-# --- FUNCIONES DE CÁLCULO MÉTRICAS NPS ---
+# --- CÁLCULO MÉTRICAS NPS ---
 def calcular_metricas_nps(df, columna):
     if columna not in df.columns:
         return 0.0, 0, 0, 0
     
-    # Convertir a numérico eliminando vacíos
     valores = pd.to_numeric(df[columna], errors='coerce').dropna()
     total = len(valores)
     
@@ -75,34 +72,38 @@ def calcular_metricas_nps(df, columna):
     pct_detractores = (detractores / total) * 100
     
     nps_score = pct_promotores - pct_detractores
-    return round(nps_score, 1), promotores, neutros, detractores
+    # Prevenir que el número baje de 0 visualmente si así se requiere
+    nps_score = max(0.0, round(nps_score, 1))
+    
+    return nps_score, promotores, neutros, detractores
 
-# --- FUNCIÓN PARA GRAFICAR VELOCÍMETROS (GAUGE CHARTS) ---
+# --- VELOCÍMETROS (ESTILO ANILLO DE LA IMAGEN) ---
 def crear_velocimetro(score, titulo, mini=False):
+    # Definir el color de la barra según el resultado
+    if score >= 90:
+        color_bar = '#22C55E'  # Verde
+    elif score >= 70:
+        color_bar = '#EAB308'  # Amarillo
+    else:
+        color_bar = '#EF4444'  # Rojo
+
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=score,
-        number={'suffix': "%", 'font': {'size': 24 if mini else 40}},
+        number={'suffix': "%", 'font': {'size': 28 if mini else 42, 'color': '#1E293B'}},
         gauge={
-            'axis': {'range': [-100, 100], 'tickwidth': 1, 'tickcolor': "#475569"},
-            'bar': {'color': "#0F172A"},
-            'bgcolor': "white",
-            'borderwidth': 2,
-            'bordercolor': "#CBD5E1",
-            'steps': [
-                {'range': [-100, 0], 'color': '#FCA5A5'},  # Rojo claro
-                {'range': [0, 50], 'color': '#FEF08A'},   # Amarillo claro
-                {'range': [50, 100], 'color': '#86EFAC'}  # Verde claro
-            ],
+            'axis': {'range': [0, 100], 'showticklabels': False}, # Escala de 0 a 100 sin números en los bordes
+            'bar': {'color': color_bar, 'thickness': 0.15},       # Grosor fino como en la imagen
+            'bgcolor': "#F1F5F9",                                 # Fondo gris claro para la parte vacía
+            'borderwidth': 0,
         }
     ))
     
-    height_chart = 160 if mini else 280
+    height_chart = 150 if mini else 240
     
-    # CORRECCIÓN AQUÍ: Quitamos el 'bold': True y ponemos <b> en el texto del título
     fig.update_layout(
-        title={'text': f"<b>{titulo}</b>", 'y': 0.9, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 14 if mini else 18}},
-        margin=dict(l=20, r=20, t=50, b=20),
+        title={'text': f"<b>{titulo}</b>", 'y': 0.85, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12 if mini else 14, 'color': '#475569'}},
+        margin=dict(l=20, r=20, t=40, b=10),
         height=height_chart,
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)'
@@ -114,27 +115,28 @@ def crear_velocimetro(score, titulo, mini=False):
 # ==============================================================================
 st.sidebar.header("Filtros Globales")
 
-# Filtro Año (Dinamizado)
 years_available = sorted(df_raw['Año'].unique(), reverse=True)
 selected_years = st.sidebar.multiselect("Año", options=years_available, default=years_available[:1])
 
-# Filtro Mes (Dinamizado)
 months_available = list(MESES_ES.values())
-# Filtrar meses que realmente existen para el año seleccionado para evitar filtros vacíos
 existing_months = df_raw[df_raw['Año'].isin(selected_years)]['Mes'].unique()
 selected_months = st.sidebar.multiselect("Seleccione Mes(es)", options=months_available, default=[m for m in months_available if m in existing_months][:1])
 
-# Filtro Marca
 if 'Marca' in df_raw.columns:
     marcas_available = sorted(df_raw['Marca'].dropna().unique())
     selected_marcas = st.sidebar.multiselect("MARCA", options=marcas_available, default=marcas_available[:1] if marcas_available else [])
 else:
     selected_marcas = []
 
-# Aplicar Filtros a la Base de Datos
 df_filtrado = df_raw[df_raw['Año'].isin(selected_years) & df_raw['Mes'].isin(selected_months)]
 if selected_marcas:
     df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
+
+# ==============================================================================
+# TÍTULO PRINCIPAL DE LA APLICACIÓN
+# ==============================================================================
+st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-items: center;'><span style='font-size: 40px; margin-right: 15px;'>📊</span> INDICADORES Y SEGUIMIENTO DE CALIDAD POSTVENTA AUTOCIEL</h1>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
 # PESTAÑAS PRINCIPALES DEL TABLERO
@@ -150,43 +152,44 @@ tab_monitor, tab_tabla, tab_ficha, tab_quejas = st.tabs([
 # 1. MONITOR GLOBAL COMPARATIVO
 # ------------------------------------------------------------------------------
 with tab_monitor:
-    st.markdown(f"<div class='main-title'>Resultados en Paralelo: {', '.join(selected_months)}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(selected_months)}</div>", unsafe_allow_html=True)
+    st.markdown("🏢 **Datos de Origen: Encuestas de Marca**")
     
-    # Bloque Superior: Indicadores Principales
-    col_q1, col_q2, col_muestra = st.columns([4, 4, 2])
-    
-    with col_q1:
-        score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_filtrado, "Q1 - Satisfacción general")
-        st.plotly_chart(crear_velocimetro(score_q1, "Q1 - SATISFACCIÓN GENERAL (NPS)"), use_container_width=True)
+    # Contenedor visual para agrupar los indicadores principales
+    with st.container():
+        col_q1, col_q2, col_muestra = st.columns([4, 4, 2])
         
-        # Desglose de bloques Promotor/Neutro/Detractor
-        sub_c1, sub_c2, sub_c3 = st.columns(3)
-        sub_c1.markdown(f"<div class='metric-box promotor'>🟢 {p_q1}<br><span style='font-size:12px;'>Prom</span></div>", unsafe_allow_html=True)
-        sub_c2.markdown(f"<div class='metric-box neutro'>🟡 {n_q1}<br><span style='font-size:12px;'>Neu</span></div>", unsafe_allow_html=True)
-        sub_c3.markdown(f"<div class='metric-box detractor'>🔴 {d_q1}<br><span style='font-size:12px;'>Det</span></div>", unsafe_allow_html=True)
+        with col_q1:
+            score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_filtrado, "Q1 - Satisfacción general")
+            st.plotly_chart(crear_velocimetro(score_q1, "Q1 - SATISFACCIÓN (NPS)"), use_container_width=True)
+            
+            sub_c1, sub_c2, sub_c3 = st.columns(3)
+            sub_c1.markdown(f"<div class='metric-box promotor'>🟢 {p_q1}<br><span style='font-size:12px; font-weight:normal;'>Prom</span></div>", unsafe_allow_html=True)
+            sub_c2.markdown(f"<div class='metric-box neutro'>🟡 {n_q1}<br><span style='font-size:12px; font-weight:normal;'>Neu</span></div>", unsafe_allow_html=True)
+            sub_c3.markdown(f"<div class='metric-box detractor'>🔴 {d_q1}<br><span style='font-size:12px; font-weight:normal;'>Det</span></div>", unsafe_allow_html=True)
 
-    with col_q2:
-        score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_filtrado, "Q2 - Recomendación - taller")
-        st.plotly_chart(crear_velocimetro(score_q2, "Q2 - RECOMENDACIÓN (NPS)"), use_container_width=True)
-        
-        sub_c4, sub_c5, sub_c6 = st.columns(3)
-        sub_c4.markdown(f"<div class='metric-box promotor'>🟢 {p_q2}<br><span style='font-size:12px;'>Prom</span></div>", unsafe_allow_html=True)
-        sub_c5.markdown(f"<div class='metric-box neutro'>🟡 {n_q2}<br><span style='font-size:12px;'>Neu</span></div>", unsafe_allow_html=True)
-        sub_c6.markdown(f"<div class='metric-box detractor'>🔴 {d_q2}<br><span style='font-size:12px;'>Det</span></div>", unsafe_allow_html=True)
-        
-    with col_muestra:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown(f"""
-            <div class='muestra-box'>
-                <span style='font-size: 16px; color: #64748B; font-weight: bold;'>Muestra</span><br>
-                <span style='font-size: 48px; color: #0F172A; font-weight: bold;'>{len(df_filtrado)}</span>
-            </div>
-        """, unsafe_allow_html=True)
+        with col_q2:
+            score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_filtrado, "Q2 - Recomendación - taller")
+            st.plotly_chart(crear_velocimetro(score_q2, "Q2 - RECOMENDACIÓN (NPS)"), use_container_width=True)
+            
+            sub_c4, sub_c5, sub_c6 = st.columns(3)
+            sub_c4.markdown(f"<div class='metric-box promotor'>🟢 {p_q2}<br><span style='font-size:12px; font-weight:normal;'>Prom</span></div>", unsafe_allow_html=True)
+            sub_c5.markdown(f"<div class='metric-box neutro'>🟡 {n_q2}<br><span style='font-size:12px; font-weight:normal;'>Neu</span></div>", unsafe_allow_html=True)
+            sub_c6.markdown(f"<div class='metric-box detractor'>🔴 {d_q2}<br><span style='font-size:12px; font-weight:normal;'>Det</span></div>", unsafe_allow_html=True)
+            
+        with col_muestra:
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            st.markdown(f"""
+                <div class='muestra-box'>
+                    <span style='font-size: 14px; color: #64748B; font-weight: bold;'>Muestra</span><br>
+                    <span style='font-size: 42px; color: #0F172A; font-weight: bold;'>{len(df_filtrado)}</span>
+                </div>
+            """, unsafe_allow_html=True)
 
     st.markdown("---")
     
-    # Bloque Inferior: Sub-pestañas de Procesos
-    st.markdown("### Segmentación Operativa de Posventa")
+    st.markdown("<p style='font-size: 14px; color: #475569;'><b>Segmentación actual Marca:</b> Todos</p>", unsafe_allow_html=True)
+    
     subtab_agendamiento, subtab_asesor, subtab_taller, subtab_entrega, subtab_comentarios = st.tabs([
         "📅 Agendamiento e Instalaciones", 
         "👔 Atención del Asesor", 
@@ -317,7 +320,6 @@ with tab_quejas:
     st.markdown("### Alertas de Clientes Detractores")
     st.markdown("Casos críticos detectados donde la puntuación en Satisfacción (Q1) o Recomendación (Q2) es igual o menor a 6.")
     
-    # Identificar detractores en Q1 o Q2
     if "Q1 - Satisfacción general" in df_filtrado.columns and "Q2 - Recomendación - taller" in df_filtrado.columns:
         q1_num = pd.to_numeric(df_filtrado["Q1 - Satisfacción general"], errors='coerce')
         q2_num = pd.to_numeric(df_filtrado["Q2 - Recomendación - taller"], errors='coerce')
