@@ -1,4 +1,4 @@
-import streamlit as str
+import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
@@ -9,7 +9,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilos CSS personalizados para replicar la estética de la imagen
+# Estilos CSS personalizados para replicar la estética
 st.markdown("""
     <style>
     .main-title { font-size: 32px; font-weight: bold; color: #1E293B; margin-bottom: 20px; }
@@ -75,7 +75,7 @@ def calcular_metricas_nps(df, columna):
     pct_detractores = (detractores / total) * 100
     
     nps_score = pct_promotores - pct_detractores
-    return round(nps_score, 1), promotores, neutros, detractors
+    return round(nps_score, 1), promotores, neutros, detractores
 
 # --- FUNCIÓN PARA GRAFICAR VELOCÍMETROS (GAUGE CHARTS) ---
 def crear_velocimetro(score, titulo, mini=False):
