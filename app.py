@@ -98,8 +98,10 @@ def crear_velocimetro(score, titulo, mini=False):
     ))
     
     height_chart = 160 if mini else 280
+    
+    # CORRECCIÓN AQUÍ: Quitamos el 'bold': True y ponemos <b> en el texto del título
     fig.update_layout(
-        title={'text': titulo, 'y': 0.9, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 14 if mini else 18, 'bold': True}},
+        title={'text': f"<b>{titulo}</b>", 'y': 0.9, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 14 if mini else 18}},
         margin=dict(l=20, r=20, t=50, b=20),
         height=height_chart,
         paper_bgcolor='rgba(0,0,0,0)',
