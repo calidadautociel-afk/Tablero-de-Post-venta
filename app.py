@@ -9,14 +9,13 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilos CSS personalizados para replicar la estética y los botones
+# Estilos CSS personalizados
 st.markdown("""
     <style>
     .main-title { font-size: 26px; font-weight: bold; color: #1E293B; margin-bottom: 5px; margin-top: -20px; }
     .sub-title { font-size: 20px; font-weight: bold; color: #334155; margin-bottom: 15px; }
     .muestra-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; text-align: center; }
     
-    /* Estilos para los botones que simulan las tarjetas */
     div.stButton > button {
         width: 100%;
         border-radius: 5px;
@@ -26,7 +25,6 @@ st.markdown("""
         transition: all 0.3s;
     }
     
-    /* Hover effect general */
     div.stButton > button:hover {
         opacity: 0.8;
         border-color: #1E293B;
@@ -43,14 +41,14 @@ MESES_ES = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-# --- INICIALIZACIÓN DE SESSION STATE PARA LOS FILTROS ---
+# --- INICIALIZACIÓN DE SESSION STATE ---
 if 'filtro_comentarios' not in st.session_state:
     st.session_state.filtro_comentarios = 'Todos'
 
 def set_filtro(tipo):
     st.session_state.filtro_comentarios = tipo
 
-@st.cache_data(ttl=60) # Caché reducido a 1 minuto para ver actualizaciones rápidas
+@st.cache_data(ttl=60)
 def load_data():
     df = pd.read_csv(SHEET_URL)
     df.columns = df.columns.str.strip()
@@ -58,7 +56,7 @@ def load_data():
     if 'Fecha de la Encuesta' in df.columns:
         df['Fecha_Clean'] = pd.to_datetime(df['Fecha de la Encuesta'], dayfirst=True, errors='coerce')
         df['Año'] = df['Fecha_Clean'].dt.year.fillna(2026).astype(int)
-        df['Mes_Num'] = df['Fecha_Clean'].dt.month.fillna(5).astype(int) # Default a Mayo si hay error
+        df['Mes_Num'] = df['Fecha_Clean'].dt.month.fillna(5).astype(int)
         df['Mes'] = df['Mes_Num'].map(MESES_ES)
     else:
         df['Año'] = 2026
@@ -71,6 +69,9 @@ try:
 except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
+
+# --- BÚSQUEDA DINÁMICA DE COLUMNA Q4 ---
+col_q4 = next((col for col in df_raw.columns if 'Q4' in col and 'Motivo' in col), None)
 
 # --- CÁLCULO MÉTRICAS NPS ---
 def calcular_metricas_nps(df, columna):
@@ -95,16 +96,15 @@ def calcular_metricas_nps(df, columna):
     
     return nps_score, promotores, neutros, detractores
 
-# --- VELOCÍMETROS (ESTILO ANILLO DE LA IMAGEN) ---
+# --- VELOCÍMETROS ---
 def crear_velocimetro(score, titulo, mini=False):
     if score >= 90:
-        color_bar = '#22C55E'  # Verde
+        color_bar = '#22C55E'
     elif score >= 70:
-        color_bar = '#EAB308'  # Amarillo
+        color_bar = '#EAB308'
     else:
-        color_bar = '#EF4444'  # Rojo
+        color_bar = '#EF4444'
 
-    # Ajuste de fuente para que no desaparezca en modo mini
     font_size = 20 if mini else 42
 
     fig = go.Figure(go.Indicator(
@@ -120,7 +120,6 @@ def crear_velocimetro(score, titulo, mini=False):
     ))
     
     height_chart = 130 if mini else 240
-    # Ajuste de márgenes (b:0) para darle más espacio al número en los gráficos pequeños
     margin_bottom = 0 if mini else 10
     
     fig.update_layout(
@@ -150,18 +149,28 @@ if 'Marca' in df_raw.columns:
 else:
     selected_marcas = []
 
+# NUEVO FILTRO Q4
+if col_q4:
+    motivos_available = sorted(df_raw[col_q4].dropna().astype(str).unique())
+    selected_motivos = st.sidebar.multiselect("MOTIVO DE VISITA (Q4)", options=motivos_available, default=[])
+else:
+    selected_motivos = []
+
+# APLICAR FILTROS
 df_filtrado = df_raw[df_raw['Año'].isin(selected_years) & df_raw['Mes'].isin(selected_months)]
 if selected_marcas:
     df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
+if selected_motivos and col_q4:
+    df_filtrado = df_filtrado[df_filtrado[col_q4].isin(selected_motivos)]
 
 # ==============================================================================
-# TÍTULO PRINCIPAL DE LA APLICACIÓN
+# TÍTULO PRINCIPAL
 # ==============================================================================
 st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-items: center;'><span style='font-size: 40px; margin-right: 15px;'>📊</span> INDICADORES Y SEGUIMIENTO DE CALIDAD POSTVENTA AUTOCIEL</h1>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
-# PESTAÑAS PRINCIPALES DEL TABLERO
+# PESTAÑAS PRINCIPALES
 # ==============================================================================
 tab_monitor, tab_tabla, tab_ficha, tab_quejas = st.tabs([
     "🏠 Monitor Global Comparativo", 
@@ -177,7 +186,6 @@ with tab_monitor:
     st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(selected_months)}</div>", unsafe_allow_html=True)
     st.markdown("🏢 **Datos de Origen: Encuestas de Marca**")
     
-    # Contenedor visual para agrupar los indicadores principales
     with st.container():
         col_q1, col_q2, col_muestra = st.columns([4, 4, 2])
         
@@ -214,24 +222,68 @@ with tab_monitor:
                 </div>
             """, unsafe_allow_html=True)
 
-    # Lógica para inyectar colores a los botones específicos creados arriba
+    # CSS botones P/N/D
     st.markdown("""
         <style>
         button[kind="secondary"] { background-color: transparent; }
-        /* Promotores (Verde) */
         div[data-testid="stVerticalBlock"] div:nth-child(1) > div > button { background-color: #D4EDDA; color: #155724; border-color: #C3E6CB;}
-        /* Neutros (Amarillo) */
         div[data-testid="stVerticalBlock"] div:nth-child(2) > div > button { background-color: #FFF3CD; color: #856404; border-color: #FFEEBA;}
-        /* Detractores (Rojo) */
         div[data-testid="stVerticalBlock"] div:nth-child(3) > div > button { background-color: #F8D7DA; color: #721C24; border-color: #F5C6CB;}
         </style>
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-    
+
+    # --- NUEVA SECCIÓN: RADIOGRAFÍA DE TALLER (Q4) ---
+    if col_q4:
+        st.markdown(f"#### 📊 Análisis de Carga Operativa: {col_q4}")
+        st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Cruza el volumen de cada servicio con su puntaje de Recomendación (Q2). Los colores indican: <span style='color:#22C55E; font-weight:bold;'>Verde (Excelente)</span>, <span style='color:#EAB308; font-weight:bold;'>Amarillo (Alerta)</span>, <span style='color:#EF4444; font-weight:bold;'>Rojo (Crítico)</span>.</p>", unsafe_allow_html=True)
+        
+        motivos_data = []
+        for motivo in df_filtrado[col_q4].dropna().unique():
+            df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
+            nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - taller")
+            motivos_data.append({
+                "Motivo": motivo,
+                "Volumen": len(df_motivo),
+                "NPS_Q2": nps_q2
+            })
+            
+        if motivos_data:
+            df_m = pd.DataFrame(motivos_data).sort_values(by="Volumen", ascending=True)
+            
+            # Gráfico de barras interactivo de Plotly
+            fig_q4 = go.Figure()
+            fig_q4.add_trace(go.Bar(
+                y=df_m["Motivo"],
+                x=df_m["Volumen"],
+                orientation='h',
+                marker=dict(
+                    color=df_m["NPS_Q2"],
+                    colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], # Escala de Rojo a Verde
+                    cmin=0, cmax=100,
+                    colorbar=dict(title="NPS Q2")
+                ),
+                text=df_m["Volumen"],
+                textposition='auto',
+                hovertemplate="<b>Motivo:</b> %{y}<br><b>Autos:</b> %{x}<br><b>NPS Recomendación:</b> %{marker.color:.1f}%<extra></extra>"
+            ))
+            
+            fig_q4.update_layout(
+                height=350 if len(df_m) > 3 else 250,
+                margin=dict(l=20, r=20, t=20, b=20),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Volumen de Vehículos"),
+                yaxis=dict(showgrid=False)
+            )
+            st.plotly_chart(fig_q4, use_container_width=True)
+        
+        st.markdown("---")
+    # ------------------------------------------------
+
     st.markdown("<p style='font-size: 14px; color: #475569;'><b>Segmentación actual Marca:</b> Todos</p>", unsafe_allow_html=True)
     
-    # Se eliminó la pestaña de "Comentarios", ahora son 4 operativas
     subtab_agendamiento, subtab_asesor, subtab_taller, subtab_entrega = st.tabs([
         "📅 Agendamiento e Instalaciones", 
         "👔 Atención del Asesor", 
@@ -287,7 +339,7 @@ with tab_monitor:
             score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q19 - Satisfacción con el Contacto")
             st.plotly_chart(crear_velocimetro(score, "Q19 - Satisfacción con Contacto", mini=True), use_container_width=True)
 
-    # --- TABLA GLOBAL DE COMENTARIOS INYECTADA AL FINAL DE LA PESTAÑA PRINCIPAL ---
+    # --- TABLA GLOBAL DE COMENTARIOS INYECTADA ---
     st.markdown("---")
     col_tit, col_btn = st.columns([8, 2])
     with col_tit:
@@ -297,12 +349,9 @@ with tab_monitor:
             st.button("🔄 Ver Todos", on_click=set_filtro, args=('Todos',), use_container_width=True)
     
     if "Q3 - Verbalización" in df_filtrado.columns:
-        # Copia del dataframe para no afectar los KPIs de arriba
         df_comentarios = df_filtrado.copy()
         
-        # Lógica de filtrado según el botón presionado
         if st.session_state.filtro_comentarios != 'Todos':
-            # Usamos Q1 como base primaria para el sentimiento
             q_base = pd.to_numeric(df_comentarios["Q1 - Satisfacción general"], errors='coerce')
             if st.session_state.filtro_comentarios == 'Promotor':
                 df_comentarios = df_comentarios[q_base >= 9]
