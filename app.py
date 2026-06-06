@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import math
 
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
@@ -357,14 +358,34 @@ with tab_tabla:
         for p_asesor in asesores:
             df_ase = df_filtrado[df_filtrado[col_asesor_key] == p_asesor]
             muestra_ase = len(df_ase)
-            nps_q2, _, _, _ = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
-            nps_q1, _, _, _ = calcular_metricas_nps(df_ase, "Q1 - Satisfacción general")
+            
+            # Cálculos de NPS
+            nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
+            nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
+            nps_q8, _, _, _ = calcular_metricas_nps(df_ase, "Q8 - Competencia Asesor de Servicio")
+            nps_q10, _, _, _ = calcular_metricas_nps(df_ase, "Q10 - Explicación presupuesto")
+            nps_q11, _, _, _ = calcular_metricas_nps(df_ase, "Q11 - Explicación trabajo - costo")
+            
+            # Cálculo de la meta de promotores faltantes
+            t_validos = p_q2 + n_q2 + d_q2
+            if nps_q2 >= 94.0:
+                meta_str = "✅ Alcanzado"
+            elif t_validos > 0:
+                faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
+                faltantes = max(0, faltantes)
+                meta_str = f"Faltan {faltantes} Promotor{'es' if faltantes != 1 else ''}"
+            else:
+                meta_str = "Sin datos"
             
             ranking_data.append({
                 "Asesor de Servicio": p_asesor,
-                "Muestra": muestra_ase,
                 "NPS Q2 (Recomendación)": nps_q2,
-                "NPS Q1 (Satisfacción)": nps_q1
+                "Muestra": muestra_ase,
+                "NPS Q7 (Cortesía)": nps_q7,
+                "NPS Q8 (Competencia)": nps_q8,
+                "NPS Q10 (Presupuesto)": nps_q10,
+                "NPS Q11 (Trabajo/Costo)": nps_q11,
+                "Meta 94%": meta_str
             })
             
         df_ranking = pd.DataFrame(ranking_data).sort_values(by="NPS Q2 (Recomendación)", ascending=False)
