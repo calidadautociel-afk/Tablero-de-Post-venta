@@ -31,15 +31,16 @@ MESES_ES = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60) # Caché reducido a 1 minuto para ver actualizaciones rápidas
 def load_data():
     df = pd.read_csv(SHEET_URL)
     df.columns = df.columns.str.strip()
     
     if 'Fecha de la Encuesta' in df.columns:
-        df['Fecha_Clean'] = pd.to_datetime(df['Fecha de la Encuesta'], errors='coerce')
+        # CORRECCIÓN APLICADA AQUÍ: dayfirst=True para fechas argentinas (DD/MM/AAAA)
+        df['Fecha_Clean'] = pd.to_datetime(df['Fecha de la Encuesta'], dayfirst=True, errors='coerce')
         df['Año'] = df['Fecha_Clean'].dt.year.fillna(2026).astype(int)
-        df['Mes_Num'] = df['Fecha_Clean'].dt.month.fillna(1).astype(int)
+        df['Mes_Num'] = df['Fecha_Clean'].dt.month.fillna(5).astype(int) # Default a Mayo si hay error
         df['Mes'] = df['Mes_Num'].map(MESES_ES)
     else:
         df['Año'] = 2026
@@ -72,7 +73,7 @@ def calcular_metricas_nps(df, columna):
     pct_detractores = (detractores / total) * 100
     
     nps_score = pct_promotores - pct_detractores
-    # Prevenir que el número baje de 0 visualmente si así se requiere
+    # Prevenir que el número baje de 0 visualmente
     nps_score = max(0.0, round(nps_score, 1))
     
     return nps_score, promotores, neutros, detractores
