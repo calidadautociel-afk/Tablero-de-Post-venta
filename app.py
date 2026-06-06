@@ -149,19 +149,10 @@ if 'Marca' in df_raw.columns:
 else:
     selected_marcas = []
 
-# NUEVO FILTRO Q4
-if col_q4:
-    motivos_available = sorted(df_raw[col_q4].dropna().astype(str).unique())
-    selected_motivos = st.sidebar.multiselect("MOTIVO DE VISITA (Q4)", options=motivos_available, default=[])
-else:
-    selected_motivos = []
-
-# APLICAR FILTROS
+# APLICAR FILTROS (Q4 Removido del panel lateral)
 df_filtrado = df_raw[df_raw['Año'].isin(selected_years) & df_raw['Mes'].isin(selected_months)]
 if selected_marcas:
     df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
-if selected_motivos and col_q4:
-    df_filtrado = df_filtrado[df_filtrado[col_q4].isin(selected_motivos)]
 
 # ==============================================================================
 # TÍTULO PRINCIPAL
@@ -172,10 +163,11 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # PESTAÑAS PRINCIPALES
 # ==============================================================================
-tab_monitor, tab_tabla, tab_ficha, tab_quejas = st.tabs([
+tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas = st.tabs([
     "🏠 Monitor Global Comparativo", 
     "👥 Tabla Unificada de Asesores", 
     "👤 Ficha Individual por Asesor", 
+    "📊 Análisis de Carga Operativa",
     "⚠️ Gestión de Quejas"
 ])
 
@@ -233,55 +225,6 @@ with tab_monitor:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-
-    # --- NUEVA SECCIÓN: RADIOGRAFÍA DE TALLER (Q4) ---
-    if col_q4:
-        st.markdown(f"#### 📊 Análisis de Carga Operativa: {col_q4}")
-        st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Cruza el volumen de cada servicio con su puntaje de Recomendación (Q2). Los colores indican: <span style='color:#22C55E; font-weight:bold;'>Verde (Excelente)</span>, <span style='color:#EAB308; font-weight:bold;'>Amarillo (Alerta)</span>, <span style='color:#EF4444; font-weight:bold;'>Rojo (Crítico)</span>.</p>", unsafe_allow_html=True)
-        
-        motivos_data = []
-        for motivo in df_filtrado[col_q4].dropna().unique():
-            df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
-            nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - taller")
-            motivos_data.append({
-                "Motivo": motivo,
-                "Volumen": len(df_motivo),
-                "NPS_Q2": nps_q2
-            })
-            
-        if motivos_data:
-            df_m = pd.DataFrame(motivos_data).sort_values(by="Volumen", ascending=True)
-            
-            # Gráfico de barras interactivo de Plotly
-            fig_q4 = go.Figure()
-            fig_q4.add_trace(go.Bar(
-                y=df_m["Motivo"],
-                x=df_m["Volumen"],
-                orientation='h',
-                marker=dict(
-                    color=df_m["NPS_Q2"],
-                    colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], # Escala de Rojo a Verde
-                    cmin=0, cmax=100,
-                    colorbar=dict(title="NPS Q2")
-                ),
-                text=df_m["Volumen"],
-                textposition='auto',
-                hovertemplate="<b>Motivo:</b> %{y}<br><b>Autos:</b> %{x}<br><b>NPS Recomendación:</b> %{marker.color:.1f}%<extra></extra>"
-            ))
-            
-            fig_q4.update_layout(
-                height=350 if len(df_m) > 3 else 250,
-                margin=dict(l=20, r=20, t=20, b=20),
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Volumen de Vehículos"),
-                yaxis=dict(showgrid=False)
-            )
-            st.plotly_chart(fig_q4, use_container_width=True)
-        
-        st.markdown("---")
-    # ------------------------------------------------
-
     st.markdown("<p style='font-size: 14px; color: #475569;'><b>Segmentación actual Marca:</b> Todos</p>", unsafe_allow_html=True)
     
     subtab_agendamiento, subtab_asesor, subtab_taller, subtab_entrega = st.tabs([
@@ -429,7 +372,57 @@ with tab_ficha:
         st.info("Filtro por asesor no disponible (Revisa los nombres de las columnas).")
 
 # ------------------------------------------------------------------------------
-# 4. GESTIÓN DE QUEJAS
+# 4. ANÁLISIS DE CARGA OPERATIVA (NUEVA PESTAÑA)
+# ------------------------------------------------------------------------------
+with tab_carga:
+    if col_q4:
+        st.markdown(f"### 📊 Análisis de Carga Operativa: {col_q4}")
+        st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Cruza el volumen de cada servicio con su puntaje de Recomendación (Q2). Los colores indican: <span style='color:#22C55E; font-weight:bold;'>Verde (Excelente)</span>, <span style='color:#EAB308; font-weight:bold;'>Amarillo (Alerta)</span>, <span style='color:#EF4444; font-weight:bold;'>Rojo (Crítico)</span>.</p>", unsafe_allow_html=True)
+        
+        motivos_data = []
+        for motivo in df_filtrado[col_q4].dropna().unique():
+            df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
+            nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - taller")
+            motivos_data.append({
+                "Motivo": motivo,
+                "Volumen": len(df_motivo),
+                "NPS_Q2": nps_q2
+            })
+            
+        if motivos_data:
+            df_m = pd.DataFrame(motivos_data).sort_values(by="Volumen", ascending=True)
+            
+            # Gráfico de barras interactivo de Plotly
+            fig_q4 = go.Figure()
+            fig_q4.add_trace(go.Bar(
+                y=df_m["Motivo"],
+                x=df_m["Volumen"],
+                orientation='h',
+                marker=dict(
+                    color=df_m["NPS_Q2"],
+                    colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], # Escala de Rojo a Verde
+                    cmin=0, cmax=100,
+                    colorbar=dict(title="NPS Q2")
+                ),
+                text=df_m["Volumen"],
+                textposition='auto',
+                hovertemplate="<b>Motivo:</b> %{y}<br><b>Autos:</b> %{x}<br><b>NPS Recomendación:</b> %{marker.color:.1f}%<extra></extra>"
+            ))
+            
+            fig_q4.update_layout(
+                height=350 if len(df_m) > 3 else 250,
+                margin=dict(l=20, r=20, t=20, b=20),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Volumen de Vehículos"),
+                yaxis=dict(showgrid=False)
+            )
+            st.plotly_chart(fig_q4, use_container_width=True)
+    else:
+        st.info("Columna de motivos de visita (Q4) no encontrada.")
+
+# ------------------------------------------------------------------------------
+# 5. GESTIÓN DE QUEJAS
 # ------------------------------------------------------------------------------
 with tab_quejas:
     st.markdown("### Alertas de Clientes Detractores")
