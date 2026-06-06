@@ -131,6 +131,33 @@ def crear_velocimetro(score, titulo, mini=False):
     )
     return fig
 
+# --- GRÁFICOS DE TORTA (ANILLOS) ---
+def crear_torta(df, columna, titulo):
+    if columna not in df.columns:
+        fig = go.Figure()
+        fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.85, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, height=160, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        return fig
+        
+    datos = df[columna].value_counts()
+    fig = go.Figure(data=[go.Pie(
+        labels=datos.index, 
+        values=datos.values, 
+        hole=.5, 
+        textinfo='label+percent', 
+        textposition='inside', 
+        insidetextorientation='radial'
+    )])
+    
+    fig.update_layout(
+        title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, 
+        margin=dict(l=10, r=10, t=40, b=10), 
+        height=160, 
+        showlegend=False,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
+
 # ==============================================================================
 # PANEL LATERAL DE FILTROS GLOBALES
 # ==============================================================================
@@ -227,11 +254,12 @@ with tab_monitor:
     st.markdown("---")
     st.markdown("<p style='font-size: 14px; color: #475569;'><b>Segmentación actual Marca:</b> Todos</p>", unsafe_allow_html=True)
     
-    subtab_agendamiento, subtab_asesor, subtab_taller, subtab_entrega = st.tabs([
+    # --- PESTAÑAS OPERATIVAS AJUSTADAS ---
+    subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs([
         "📅 Agendamiento e Instalaciones", 
         "👔 Atención del Asesor", 
         "⚙️ Calidad y Taller", 
-        "🚗 Entrega y Seguimiento"
+        "📞 Contacto Posterior"
     ])
     
     with subtab_agendamiento:
@@ -244,7 +272,7 @@ with tab_monitor:
             st.plotly_chart(crear_velocimetro(score, "Q6 - Satisfacción Instalaciones", mini=True), use_container_width=True)
             
     with subtab_asesor:
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
             score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q7 - Cortesía y Amabilidad")
             st.plotly_chart(crear_velocimetro(score, "Q7 - Cortesía y Amabilidad", mini=True), use_container_width=True)
@@ -252,33 +280,35 @@ with tab_monitor:
             score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q8 - Competencia Asesor de Servicio")
             st.plotly_chart(crear_velocimetro(score, "Q8 - Competencia Asesor", mini=True), use_container_width=True)
         with c3:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q9 - Oferta movilidad")
-            st.plotly_chart(crear_velocimetro(score, "Q9 - Oferta Movilidad", mini=True), use_container_width=True)
+            st.plotly_chart(crear_torta(df_filtrado, "Q9 - Oferta movilidad", "Q9 - Oferta Movilidad"), use_container_width=True)
         with c4:
             score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q10 - Explicación presupuesto")
             st.plotly_chart(crear_velocimetro(score, "Q10 - Explicación Presupuesto", mini=True), use_container_width=True)
+        with c5:
+            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q11 - Explicación trabajo - costo")
+            st.plotly_chart(crear_velocimetro(score, "Q11 - Explicación Trabajo/Costo", mini=True), use_container_width=True)
 
     with subtab_taller:
         c1, c2, c3 = st.columns(3)
         with c1:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q11 - Explicación trabajo - costo")
-            st.plotly_chart(crear_velocimetro(score, "Q11 - Explicación Trabajo/Costo", mini=True), use_container_width=True)
-        with c2:
             score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q12 - Calidad del trabajo")
             st.plotly_chart(crear_velocimetro(score, "Q12 - Calidad del Trabajo", mini=True), use_container_width=True)
-        with c3:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q13 - Trabajo realizado en primera visita")
-            st.plotly_chart(crear_velocimetro(score, "Q13 - Reparado Primera Visita (FIR)", mini=True), use_container_width=True)
-
-    with subtab_entrega:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q15 - Entrega según momento acordado")
-            st.plotly_chart(crear_velocimetro(score, "Q15 - Entrega a Tiempo", mini=True), use_container_width=True)
         with c2:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q16 - Información del retraso")
-            st.plotly_chart(crear_velocimetro(score, "Q16 - Información de Retraso", mini=True), use_container_width=True)
+            st.plotly_chart(crear_torta(df_filtrado, "Q13 - Trabajo realizado en primera visita", "Q13 - Reparado 1ra Visita (FIR)"), use_container_width=True)
         with c3:
+            st.plotly_chart(crear_torta(df_filtrado, "Q14 - Motivo del trabajo no realizado", "Q14 - Motivo Trabajo No Realizado"), use_container_width=True)
+            
+        c4, c5 = st.columns(2)
+        with c4:
+            st.plotly_chart(crear_torta(df_filtrado, "Q15 - Entrega según momento acordado", "Q15 - Entrega a Tiempo"), use_container_width=True)
+        with c5:
+            st.plotly_chart(crear_torta(df_filtrado, "Q16 - Información del retraso", "Q16 - Información de Retraso"), use_container_width=True)
+
+    with subtab_contacto:
+        c1, c2 = st.columns(2)
+        with c1:
+            st.plotly_chart(crear_torta(df_filtrado, "Q18 - Contactado", "Q18 - Contactado"), use_container_width=True)
+        with c2:
             score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q19 - Satisfacción con el Contacto")
             st.plotly_chart(crear_velocimetro(score, "Q19 - Satisfacción con Contacto", mini=True), use_container_width=True)
 
