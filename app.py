@@ -16,6 +16,10 @@ st.markdown("""
     .main-title { font-size: 26px; font-weight: bold; color: #1E293B; margin-bottom: 5px; margin-top: -20px; }
     .sub-title { font-size: 20px; font-weight: bold; color: #334155; margin-bottom: 15px; }
     .muestra-box { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 15px; text-align: center; }
+    .kpi-card { background-color: #ffffff; border: 1px solid #E2E8F0; border-radius: 8px; padding: 20px; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+    .kpi-value { font-size: 48px; font-weight: bold; color: #0F172A; line-height: 1; }
+    .kpi-label { font-size: 16px; color: #64748B; margin-top: 5px; font-weight: 500; }
+    .kpi-sub { font-size: 13px; color: #22C55E; font-weight: bold; margin-top: 10px; }
     
     div.stButton > button {
         width: 100%;
@@ -62,6 +66,7 @@ def load_data():
     else:
         df['Año'] = 2026
         df['Mes'] = "Mayo"
+        df['Mes_Num'] = 5
         
     return df
 
@@ -194,7 +199,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas = st.tabs([
     "🏠 Monitor Global Comparativo", 
     "👥 Tabla Unificada de Asesores", 
-    "👤 Ficha Individual por Asesor", 
+    "👤 Ficha Histórica Asesor", 
     "📊 Análisis de Carga Operativa",
     "⚠️ Gestión de Quejas"
 ])
@@ -394,31 +399,117 @@ with tab_tabla:
         st.warning("Para activar esta pestaña, asegúrate de tener una columna que contenga la palabra 'Asesor' en tu hoja 'Enc. de Marca'.")
 
 # ------------------------------------------------------------------------------
-# 3. FICHA INDIVIDUAL POR ASESOR
+# 3. FICHA HISTÓRICA POR ASESOR (COMPLETAMENTE REDISEÑADA)
 # ------------------------------------------------------------------------------
 with tab_ficha:
-    st.markdown("### Perfil de Calidad Individual")
+    st.markdown("### Evolución Histórica de Calidad")
+    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza la información total acumulada sin restricciones de los filtros globales de Año/Mes.</p>", unsafe_allow_html=True)
+    
     if col_asesor_key:
-        lista_asesores = sorted(df_filtrado[col_asesor_key].dropna().unique())
-        asesor_seleccionado = st.selectbox("Seleccione el Asesor de Servicio:", options=lista_asesores)
+        # ATENCIÓN: Usamos df_raw para no estar limitados por el filtro lateral
+        lista_asesores_hist = sorted(df_raw[col_asesor_key].dropna().unique())
+        asesor_seleccionado_hist = st.selectbox("Seleccione el Asesor de Servicio para ver su historial:", options=lista_asesores_hist)
         
-        df_individual = df_filtrado[df_filtrado[col_asesor_key] == asesor_seleccionado]
+        df_hist_ase = df_raw[df_raw[col_asesor_key] == asesor_seleccionado_hist]
         
-        c_ind1, c_ind2, c_ind3 = st.columns([4, 4, 2])
-        with c_ind1:
-            score_ind_q1, _, _, _ = calcular_metricas_nps(df_individual, "Q1 - Satisfacción general")
-            st.plotly_chart(crear_velocimetro(score_ind_q1, "Q1 - Satisfacción"), use_container_width=True)
-        with c_ind2:
-            score_ind_q2, _, _, _ = calcular_metricas_nps(df_individual, "Q2 - Recomendación - taller")
-            st.plotly_chart(crear_velocimetro(score_ind_q2, "Q2 - Recomendación (Métrica Principal)"), use_container_width=True)
-        with c_ind3:
-            st.markdown("<br><br>", unsafe_allow_html=True)
+        # --- TARJETAS KPI SUPERIORES ---
+        c_kpi1, c_kpi2, c_kpi3 = st.columns(3)
+        
+        nps_hist_q2, _, _, _ = calcular_metricas_nps(df_hist_ase, "Q2 - Recomendación - taller")
+        with c_kpi1:
             st.markdown(f"""
-                <div class='muestra-box'>
-                    <span style='font-size: 14px; color: #64748B; font-weight: bold;'>Encuestas</span><br>
-                    <span style='font-size: 36px; color: #0F172A; font-weight: bold;'>{len(df_individual)}</span>
+                <div class='kpi-card'>
+                    <div class='kpi-label'>NPS RECOMENDACIÓN ACUMULADO</div>
+                    <div class='kpi-value'>{nps_hist_q2}%</div>
+                    <div class='kpi-sub'>Historial Completo Q2</div>
                 </div>
             """, unsafe_allow_html=True)
+            
+        nps_hist_q1, _, _, _ = calcular_metricas_nps(df_hist_ase, "Q1 - Satisfacción general")
+        with c_kpi2:
+            st.markdown(f"""
+                <div class='kpi-card'>
+                    <div class='kpi-label'>NPS SATISFACCIÓN ACUMULADO</div>
+                    <div class='kpi-value'>{nps_hist_q1}%</div>
+                    <div class='kpi-sub'>Historial Completo Q1</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c_kpi3:
+            st.markdown(f"""
+                <div class='kpi-card'>
+                    <div class='kpi-label'>MUESTRA TOTAL ACUMULADA</div>
+                    <div class='kpi-value'>{len(df_hist_ase)}</div>
+                    <div class='kpi-sub'>Encuestas Analizadas</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # --- GRÁFICO DE LÍNEAS (EVOLUCIÓN MES A MES) ---
+        if 'Mes_Num' in df_hist_ase.columns and 'Año' in df_hist_ase.columns:
+            # Agrupar por Año y Mes Numérico para mantener el orden cronológico
+            hist_data = []
+            # Usar groupby para recorrer ordenadamente
+            agrupado = df_hist_ase.groupby(['Año', 'Mes_Num'])
+            
+            for (año, mes_num), grupo in agrupado:
+                mes_nombre = MESES_ES.get(mes_num, "Desc")
+                nps_mensual_q2, _, _, _ = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")
+                hist_data.append({
+                    "Periodo": f"{mes_nombre} {año}",
+                    "Orden": año * 100 + mes_num, # Truco matemático para ordenar cronológicamente
+                    "NPS": nps_mensual_q2,
+                    "Muestra": len(grupo)
+                })
+            
+            if hist_data:
+                df_grafico = pd.DataFrame(hist_data).sort_values("Orden")
+                
+                fig_line = go.Figure()
+                
+                # Línea de tendencia del Asesor
+                fig_line.add_trace(go.Scatter(
+                    x=df_grafico['Periodo'], 
+                    y=df_grafico['NPS'],
+                    mode='lines+markers+text',
+                    name='NPS Recomendación',
+                    line=dict(color='#1E293B', width=3),
+                    marker=dict(size=10, color='#1E293B'),
+                    text=df_grafico['NPS'].astype(str) + '%',
+                    textposition='top center',
+                    hovertemplate='<b>%{x}</b><br>NPS: %{y}%<br>Encuestas: %{customdata}<extra></extra>',
+                    customdata=df_grafico['Muestra']
+                ))
+                
+                # Línea verde de Objetivo (94%)
+                fig_line.add_trace(go.Scatter(
+                    x=[df_grafico['Periodo'].iloc[0], df_grafico['Periodo'].iloc[-1]],
+                    y=[94, 94],
+                    mode='lines',
+                    name='Objetivo (94%)',
+                    line=dict(color='#22C55E', width=2, dash='dash'),
+                    hoverinfo='skip'
+                ))
+                
+                fig_line.update_layout(
+                    title={'text': "Evolución de NPS de Recomendación (Q2) por Mes", 'font': {'size': 16, 'color': '#1E293B'}},
+                    yaxis=dict(title='NPS (%)', range=[max(0, df_grafico['NPS'].min() - 10), 105], showgrid=True, gridcolor='#E2E8F0'),
+                    xaxis=dict(showgrid=False),
+                    margin=dict(l=40, r=40, t=60, b=40),
+                    height=400,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                
+                st.plotly_chart(fig_line, use_container_width=True)
+            else:
+                st.info("No hay suficientes datos históricos para generar el gráfico mensual.")
+        else:
+            st.info("No se pudieron procesar las fechas para armar la línea de tiempo cronológica.")
+            
     else:
         st.info("Filtro por asesor no disponible (Revisa los nombres de las columnas).")
 
