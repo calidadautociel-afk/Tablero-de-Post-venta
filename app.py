@@ -76,8 +76,9 @@ except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
 
-# --- BÚSQUEDA DINÁMICA DE COLUMNA Q4 ---
+# --- BÚSQUEDA DINÁMICA DE COLUMNAS Q4 Y Q13 ---
 col_q4 = next((col for col in df_raw.columns if 'Q4' in col and 'Motivo' in col), None)
+col_q13 = next((col for col in df_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
 
 # --- CÁLCULO MÉTRICAS NPS ---
 def calcular_metricas_nps(df, columna):
@@ -182,7 +183,7 @@ if 'Marca' in df_raw.columns:
 else:
     selected_marcas = []
 
-# APLICAR FILTROS (Q4 Removido del panel lateral)
+# APLICAR FILTROS
 df_filtrado = df_raw[df_raw['Año'].isin(selected_years) & df_raw['Mes'].isin(selected_months)]
 if selected_marcas:
     df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
@@ -399,11 +400,11 @@ with tab_tabla:
         st.warning("Para activar esta pestaña, asegúrate de tener una columna que contenga la palabra 'Asesor' en tu hoja 'Enc. de Marca'.")
 
 # ------------------------------------------------------------------------------
-# 3. FICHA HISTÓRICA POR ASESOR (COMPLETAMENTE REDISEÑADA)
+# 3. FICHA HISTÓRICA POR ASESOR (COMPLETAMENTE REDISEÑADA Y BENCHMARKING)
 # ------------------------------------------------------------------------------
 with tab_ficha:
-    st.markdown("### Evolución Histórica de Calidad")
-    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza la información total acumulada sin restricciones de los filtros globales de Año/Mes.</p>", unsafe_allow_html=True)
+    st.markdown("### Evolución Histórica de Calidad (vs Promedio Taller)")
+    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza la información total acumulada sin restricciones de los filtros globales de Año/Mes. La línea gris muestra el desempeño promedio de Autociel.</p>", unsafe_allow_html=True)
     
     if col_asesor_key:
         # ATENCIÓN: Usamos df_raw para no estar limitados por el filtro lateral
@@ -446,11 +447,16 @@ with tab_ficha:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # --- GRÁFICO DE LÍNEAS (EVOLUCIÓN MES A MES) ---
+        # --- GRÁFICO DE LÍNEAS (EVOLUCIÓN MES A MES + BENCHMARKING) ---
         if 'Mes_Num' in df_hist_ase.columns and 'Año' in df_hist_ase.columns:
-            # Agrupar por Año y Mes Numérico para mantener el orden cronológico
+            
+            # Calcular promedios globales por mes para Benchmarking
+            global_nps = {}
+            for (año, mes), grupo in df_raw.groupby(['Año', 'Mes_Num']):
+                global_nps[(año, mes)] = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")[0]
+
+            # Agrupar por Año y Mes Numérico para mantener el orden cronológico del Asesor
             hist_data = []
-            # Usar groupby para recorrer ordenadamente
             agrupado = df_hist_ase.groupby(['Año', 'Mes_Num'])
             
             for (año, mes_num), grupo in agrupado:
@@ -458,8 +464,9 @@ with tab_ficha:
                 nps_mensual_q2, _, _, _ = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")
                 hist_data.append({
                     "Periodo": f"{mes_nombre} {año}",
-                    "Orden": año * 100 + mes_num, # Truco matemático para ordenar cronológicamente
-                    "NPS": nps_mensual_q2,
+                    "Orden": año * 100 + mes_num, 
+                    "NPS_Asesor": nps_mensual_q2,
+                    "NPS_Global": global_nps.get((año, mes_num), 0),
                     "Muestra": len(grupo)
                 })
             
@@ -468,17 +475,27 @@ with tab_ficha:
                 
                 fig_line = go.Figure()
                 
-                # Línea de tendencia del Asesor
+                # Benchmarking Global (Línea Gris Suave)
                 fig_line.add_trace(go.Scatter(
                     x=df_grafico['Periodo'], 
-                    y=df_grafico['NPS'],
+                    y=df_grafico['NPS_Global'], 
+                    mode='lines', 
+                    name='Promedio Taller', 
+                    line=dict(color='#CBD5E1', width=3), 
+                    hoverinfo='skip'
+                ))
+                
+                # Línea de tendencia del Asesor (Negra Fuerte)
+                fig_line.add_trace(go.Scatter(
+                    x=df_grafico['Periodo'], 
+                    y=df_grafico['NPS_Asesor'],
                     mode='lines+markers+text',
-                    name='NPS Recomendación',
+                    name=f'NPS {asesor_seleccionado_hist}',
                     line=dict(color='#1E293B', width=3),
                     marker=dict(size=10, color='#1E293B'),
-                    text=df_grafico['NPS'].astype(str) + '%',
+                    text=df_grafico['NPS_Asesor'].astype(str) + '%',
                     textposition='top center',
-                    hovertemplate='<b>%{x}</b><br>NPS: %{y}%<br>Encuestas: %{customdata}<extra></extra>',
+                    hovertemplate='<b>%{x}</b><br>Asesor: %{y}%<br>Encuestas: %{customdata}<extra></extra>',
                     customdata=df_grafico['Muestra']
                 ))
                 
@@ -493,8 +510,8 @@ with tab_ficha:
                 ))
                 
                 fig_line.update_layout(
-                    title={'text': "Evolución de NPS de Recomendación (Q2) por Mes", 'font': {'size': 16, 'color': '#1E293B'}},
-                    yaxis=dict(title='NPS (%)', range=[max(0, df_grafico['NPS'].min() - 10), 105], showgrid=True, gridcolor='#E2E8F0'),
+                    title={'text': "Evolución de NPS Q2 vs Promedio de Autociel", 'font': {'size': 16, 'color': '#1E293B'}},
+                    yaxis=dict(title='NPS (%)', range=[max(0, df_grafico['NPS_Asesor'].min() - 10), 105], showgrid=True, gridcolor='#E2E8F0'),
                     xaxis=dict(showgrid=False),
                     margin=dict(l=40, r=40, t=60, b=40),
                     height=400,
@@ -514,13 +531,14 @@ with tab_ficha:
         st.info("Filtro por asesor no disponible (Revisa los nombres de las columnas).")
 
 # ------------------------------------------------------------------------------
-# 4. ANÁLISIS DE CARGA OPERATIVA (NUEVA PESTAÑA)
+# 4. ANÁLISIS DE CARGA OPERATIVA Y CAUSA RAÍZ (PESTAÑA EXPANDIDA)
 # ------------------------------------------------------------------------------
 with tab_carga:
     if col_q4:
-        st.markdown(f"### 📊 Análisis de Carga Operativa: {col_q4}")
-        st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Cruza el volumen de cada servicio con su puntaje de Recomendación (Q2). Los colores indican: <span style='color:#22C55E; font-weight:bold;'>Verde (Excelente)</span>, <span style='color:#EAB308; font-weight:bold;'>Amarillo (Alerta)</span>, <span style='color:#EF4444; font-weight:bold;'>Rojo (Crítico)</span>.</p>", unsafe_allow_html=True)
+        st.markdown(f"### 📊 Análisis de Carga Operativa y Calidad")
         
+        # --- 1. Gráfico Volumen vs Recomendación (Q2) ---
+        st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Cruza el volumen de cada servicio con su puntaje de Recomendación (Q2). Los colores indican: <span style='color:#22C55E; font-weight:bold;'>Verde (Excelente)</span>, <span style='color:#EAB308; font-weight:bold;'>Amarillo (Alerta)</span>, <span style='color:#EF4444; font-weight:bold;'>Rojo (Crítico)</span>.</p>", unsafe_allow_html=True)
         motivos_data = []
         for motivo in df_filtrado[col_q4].dropna().unique():
             df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
@@ -534,7 +552,6 @@ with tab_carga:
         if motivos_data:
             df_m = pd.DataFrame(motivos_data).sort_values(by="Volumen", ascending=True)
             
-            # Gráfico de barras interactivo de Plotly
             fig_q4 = go.Figure()
             fig_q4.add_trace(go.Bar(
                 y=df_m["Motivo"],
@@ -542,7 +559,7 @@ with tab_carga:
                 orientation='h',
                 marker=dict(
                     color=df_m["NPS_Q2"],
-                    colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], # Escala de Rojo a Verde
+                    colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']],
                     cmin=0, cmax=100,
                     colorbar=dict(title="NPS Q2")
                 ),
@@ -552,14 +569,68 @@ with tab_carga:
             ))
             
             fig_q4.update_layout(
+                title="1. Volumen de Entradas vs. NPS de Recomendación (Q2)",
                 height=350 if len(df_m) > 3 else 250,
-                margin=dict(l=20, r=20, t=20, b=20),
+                margin=dict(l=20, r=20, t=40, b=20),
                 paper_bgcolor='rgba(0,0,0,0)',
                 plot_bgcolor='rgba(0,0,0,0)',
                 xaxis=dict(showgrid=True, gridcolor='#E2E8F0', title="Volumen de Vehículos"),
                 yaxis=dict(showgrid=False)
             )
             st.plotly_chart(fig_q4, use_container_width=True)
+            
+            # --- 2. Gráfico Apilado Motivo vs FIR (Q13) ---
+            if col_q13 in df_filtrado.columns:
+                st.markdown("<br>", unsafe_allow_html=True)
+                respuestas_q13 = df_filtrado[col_q13].dropna().unique()
+                colores_stack = ['#22C55E', '#EF4444', '#EAB308', '#64748B', '#3B82F6']
+                
+                fig_fir = go.Figure()
+                y_orden = df_m["Motivo"] # Mantenemos el orden visual del gráfico superior
+                
+                for i, resp in enumerate(respuestas_q13):
+                    conteos = df_filtrado[df_filtrado[col_q13] == resp][col_q4].value_counts()
+                    x_vals = [conteos.get(m, 0) for m in y_orden]
+                    
+                    fig_fir.add_trace(go.Bar(
+                        y=y_orden, 
+                        x=x_vals, 
+                        name=str(resp), 
+                        orientation='h', 
+                        marker_color=colores_stack[i % len(colores_stack)]
+                    ))
+                
+                fig_fir.update_layout(
+                    barmode='stack', 
+                    title="2. Causa Raíz de Retrabajo: Motivo de Visita vs. Reparado en 1ra Visita (Q13)", 
+                    height=350 if len(df_m) > 3 else 250, 
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)', 
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_fir, use_container_width=True)
+
+        # --- 3. Buscador de Verbalizaciones por Motivo ---
+        if "Q3 - Verbalización" in df_filtrado.columns:
+            st.markdown("---")
+            st.markdown("### 💬 Lupa Cualitativa: Verbalizaciones por Motivo de Visita")
+            st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Seleccione un motivo específico para leer los comentarios asociados a ese servicio y detectar oportunidades de mejora.</p>", unsafe_allow_html=True)
+            
+            col_sel, _ = st.columns([4, 6])
+            with col_sel:
+                motivo_sel = st.selectbox("Filtrar comentarios por Motivo:", options=["Ver Todos"] + sorted(df_filtrado[col_q4].dropna().unique()))
+            
+            df_com_q4 = df_filtrado.copy()
+            if motivo_sel != "Ver Todos":
+                df_com_q4 = df_com_q4[df_com_q4[col_q4] == motivo_sel]
+                
+            df_mostrar_q4 = df_com_q4[["Fecha de la Encuesta", "Marca", col_q4, "Q1 - Satisfacción general", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
+            
+            if len(df_mostrar_q4) > 0:
+                st.dataframe(df_mostrar_q4, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay comentarios registrados para el motivo seleccionado.")
     else:
         st.info("Columna de motivos de visita (Q4) no encontrada.")
 
