@@ -123,31 +123,41 @@ def calcular_metricas_nps(df, columna):
 def calcular_promedio(df, columna):
     if columna not in df.columns:
         return 0.0
-    valores = pd.to_numeric(df[columna], errors='coerce').dropna()
+    
+    # 1. Reemplazamos comas por puntos en caso de que venga como texto
+    if df[columna].dtype == object:
+        s_limpia = df[columna].astype(str).str.replace(',', '.')
+    else:
+        s_limpia = df[columna]
+        
+    valores = pd.to_numeric(s_limpia, errors='coerce').dropna()
+    
+    # 2. Filtramos: descartamos los 0 y cualquier valor irreal
+    valores = valores[(valores > 0) & (valores <= 10)]
+    
     if len(valores) == 0:
         return 0.0
-    # Multiplicamos por 10 para escalarlo al reloj de 0-100 visualmente
+        
+    # 3. Multiplicamos por 10 para escalarlo al reloj de 0-100% visualmente
     return round(valores.mean() * 10, 1)
 
 # --- VELOCÍMETROS ---
 def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     if is_promedio:
+        # Escala de tolerancia un poco más ajustada para promedios
         color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 80 else '#EF4444')
-        suff = ""
-        val_display = score / 10 # Para mostrar 9.5 en lugar de 95
     else:
+        # Escala NPS
         color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 70 else '#EF4444')
-        suff = "%"
-        val_display = score
 
     font_size = 20 if mini else 42
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
-        value=val_display,
-        number={'suffix': suff, 'font': {'size': font_size, 'color': '#1E293B'}},
+        value=score, # Ahora usa el valor de 0 a 100 siempre
+        number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, # Siempre con %
         gauge={
-            'axis': {'range': [0, 10 if is_promedio else 100], 'showticklabels': False},
+            'axis': {'range': [0, 100], 'showticklabels': False}, # Siempre escala a 100
             'bar': {'color': color_bar, 'thickness': 0.15},
             'bgcolor': "#F1F5F9",
             'borderwidth': 0,
