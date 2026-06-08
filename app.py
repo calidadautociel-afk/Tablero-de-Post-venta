@@ -377,9 +377,13 @@ with tab_monitor:
                 elif st.session_state.filtro_comentarios_marca == 'Neutro': df_com_m = df_com_m[(q_base >= 7) & (q_base <= 8)]
                 elif st.session_state.filtro_comentarios_marca == 'Detractor': df_com_m = df_com_m[q_base <= 6]
                 
-            # Búsqueda dinámica de columnas para Marca
-            col_nombre_m = next((c for c in df_com_m.columns if 'Nombre' in c or 'Cliente' in c), None)
-            col_fecha_m = next((c for c in df_com_m.columns if 'Fecha' in c or 'Marca temporal' in c), None)
+            # Búsqueda dinámica de columnas para Marca (Fija)
+            col_nombre_m = 'Nombre Principal' if 'Nombre Principal' in df_com_m.columns else next((c for c in df_com_m.columns if 'Nombre' in c or 'Cliente' in c), None)
+            
+            if 'Fecha de la Encuesta' in df_com_m.columns:
+                col_fecha_m = 'Fecha de la Encuesta'
+            else:
+                col_fecha_m = next((c for c in df_com_m.columns if 'Fecha' in c), None)
             
             cols_m = []
             if col_nombre_m: cols_m.append(col_nombre_m)
@@ -404,9 +408,16 @@ with tab_monitor:
                 elif st.session_state.filtro_comentarios_int == 'Neutro': df_com_i = df_com_i[(qi_base >= 7) & (qi_base <= 8)]
                 elif st.session_state.filtro_comentarios_int == 'Detractor': df_com_i = df_com_i[qi_base <= 6]
             
-            # Búsqueda dinámica de columnas para Interna
-            col_nombre_i = next((c for c in df_com_i.columns if 'Nombre' in c or 'Cliente' in c), None)
-            col_fecha_i = next((c for c in df_com_i.columns if 'Fecha' in c or 'Marca temporal' in c), None)
+            # Búsqueda dinámica de columnas para Interna (CORREGIDA ESTRICTAMENTE)
+            col_nombre_i = 'Cliente' if 'Cliente' in df_com_i.columns else next((c for c in df_com_i.columns if 'Nombre' in c), None)
+            
+            # Priorizamos ESTRICTAMENTE "Fecha de la Encuesta" para no traer "Fecha Cierre"
+            if 'Fecha de la Encuesta' in df_com_i.columns:
+                col_fecha_i = 'Fecha de la Encuesta'
+            elif 'Marca temporal' in df_com_i.columns:
+                col_fecha_i = 'Marca temporal'
+            else:
+                col_fecha_i = next((c for c in df_com_i.columns if 'Fecha' in c and 'Cierre' not in c), None)
             
             cols_i = []
             if col_nombre_i: cols_i.append(col_nombre_i)
