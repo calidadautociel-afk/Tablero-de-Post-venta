@@ -124,40 +124,34 @@ def calcular_promedio(df, columna):
     if columna not in df.columns:
         return 0.0
     
-    # 1. Reemplazamos comas por puntos en caso de que venga como texto
     if df[columna].dtype == object:
         s_limpia = df[columna].astype(str).str.replace(',', '.')
     else:
         s_limpia = df[columna]
         
     valores = pd.to_numeric(s_limpia, errors='coerce').dropna()
-    
-    # 2. Filtramos: descartamos los 0 y cualquier valor irreal
     valores = valores[(valores > 0) & (valores <= 10)]
     
     if len(valores) == 0:
         return 0.0
         
-    # 3. Multiplicamos por 10 para escalarlo al reloj de 0-100% visualmente
     return round(valores.mean() * 10, 1)
 
 # --- VELOCÍMETROS ---
 def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     if is_promedio:
-        # Escala de tolerancia un poco más ajustada para promedios
         color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 80 else '#EF4444')
     else:
-        # Escala NPS
         color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 70 else '#EF4444')
 
     font_size = 20 if mini else 42
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
-        value=score, # Ahora usa el valor de 0 a 100 siempre
-        number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, # Siempre con %
+        value=score, 
+        number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, 
         gauge={
-            'axis': {'range': [0, 100], 'showticklabels': False}, # Siempre escala a 100
+            'axis': {'range': [0, 100], 'showticklabels': False}, 
             'bar': {'color': color_bar, 'thickness': 0.15},
             'bgcolor': "#F1F5F9",
             'borderwidth': 0,
@@ -319,7 +313,7 @@ with tab_monitor:
         with col_i1:
             score_i1 = calcular_promedio(df_interna_filtrado, "Promedio")
             st.plotly_chart(crear_velocimetro(score_i1, "SATISFACCIÓN (Promedio)", is_promedio=True), use_container_width=True)
-            st.markdown("<br><br><br>", unsafe_allow_html=True) # Espacio para alinear con los botones de la derecha
+            st.markdown("<br><br><br>", unsafe_allow_html=True) 
             
         with col_i2:
             score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_interna_filtrado, "1-NPS")
@@ -376,7 +370,11 @@ with tab_monitor:
                 if st.session_state.filtro_comentarios_marca == 'Promotor': df_com_m = df_com_m[q_base >= 9]
                 elif st.session_state.filtro_comentarios_marca == 'Neutro': df_com_m = df_com_m[(q_base >= 7) & (q_base <= 8)]
                 elif st.session_state.filtro_comentarios_marca == 'Detractor': df_com_m = df_com_m[q_base <= 6]
-            cm_view = df_com_m[["Fecha de la Encuesta", "Marca", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
+                
+            cols_m = ["Nombre del Cliente", "Fecha de la Encuesta", "Marca", "Q3 - Verbalización"]
+            cols_m = [c for c in cols_m if c in df_com_m.columns]
+            cm_view = df_com_m[cols_m].dropna(subset=["Q3 - Verbalización"])
+            
             if len(cm_view) > 0: st.dataframe(cm_view, use_container_width=True, hide_index=True)
             else: st.info("Sin comentarios para este segmento.")
             
@@ -393,192 +391,216 @@ with tab_monitor:
                 elif st.session_state.filtro_comentarios_int == 'Neutro': df_com_i = df_com_i[(qi_base >= 7) & (qi_base <= 8)]
                 elif st.session_state.filtro_comentarios_int == 'Detractor': df_com_i = df_com_i[qi_base <= 6]
             
-            # Usar Marca temporal si existe, si no solo Concatenado
-            cols_i = ["Marca temporal", "CONCATENADO"] if "Marca temporal" in df_com_i.columns else ["CONCATENADO"]
+            cols_i = ["Nombre del Cliente", "Marca temporal", "Marca", "CONCATENADO"]
+            cols_i = [c for c in cols_i if c in df_com_i.columns]
             ci_view = df_com_i[cols_i].dropna(subset=["CONCATENADO"])
+            
             if len(ci_view) > 0: st.dataframe(ci_view, use_container_width=True, hide_index=True)
             else: st.info("Sin comentarios para este segmento.")
 
 # ------------------------------------------------------------------------------
-# 2. TABLA UNIFICADA DE ASESORES (Mantenida Base MARCA como acordamos)
+# 2. TABLA UNIFICADA DE ASESORES (RANKING DUAL)
 # ------------------------------------------------------------------------------
 with tab_tabla:
     st.markdown("### Ranking de Desempeño General de Asesores")
     
-    col_asesor_key = next((col for col in df_filtrado.columns if 'Asesor' in col), None)
+    subtab_rk_marca, subtab_rk_int = st.tabs(["🏆 Ranking Oficial (Marca)", "🎯 Ranking Interno"])
     
-    if col_asesor_key:
-        asesores = df_filtrado[col_asesor_key].dropna().unique()
-        ranking_data = []
+    # --- RANKING MARCA ---
+    with subtab_rk_marca:
+        col_asesor_key = next((col for col in df_filtrado.columns if 'Asesor' in col), None)
+        if col_asesor_key:
+            asesores = df_filtrado[col_asesor_key].dropna().unique()
+            ranking_data = []
+            
+            for p_asesor in asesores:
+                df_ase = df_filtrado[df_filtrado[col_asesor_key] == p_asesor]
+                nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
+                nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
+                nps_q8, _, _, _ = calcular_metricas_nps(df_ase, "Q8 - Competencia Asesor de Servicio")
+                nps_q10, _, _, _ = calcular_metricas_nps(df_ase, "Q10 - Explicación presupuesto")
+                nps_q11, _, _, _ = calcular_metricas_nps(df_ase, "Q11 - Explicación trabajo - costo")
+                
+                t_validos = p_q2 + n_q2 + d_q2
+                if nps_q2 >= 94.0:
+                    meta_str = "✅ Alcanzado"
+                elif t_validos > 0:
+                    faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
+                    faltantes = max(0, faltantes)
+                    meta_str = f"Faltan {faltantes} Promotor{'es' if faltantes != 1 else ''}"
+                else:
+                    meta_str = "Sin datos"
+                
+                ranking_data.append({
+                    "Asesor de Servicio": p_asesor,
+                    "Muestra": len(df_ase),
+                    "NPS Q2 (Recomendación)": nps_q2,
+                    "NPS Q7 (Cortesía)": nps_q7,
+                    "NPS Q8 (Competencia)": nps_q8,
+                    "NPS Q10 (Presupuesto)": nps_q10,
+                    "NPS Q11 (Trabajo/Costo)": nps_q11,
+                    "Meta 94%": meta_str
+                })
+                
+            df_ranking = pd.DataFrame(ranking_data).sort_values(by="NPS Q2 (Recomendación)", ascending=False)
+            st.dataframe(df_ranking, use_container_width=True, hide_index=True)
+        else:
+            st.warning("Columna de Asesor no encontrada en la base de la Marca.")
+            
+    # --- RANKING INTERNO ---
+    with subtab_rk_int:
+        col_asesor_int = "Asesor" if "Asesor" in df_interna_filtrado.columns else None
         
-        for p_asesor in asesores:
-            df_ase = df_filtrado[df_filtrado[col_asesor_key] == p_asesor]
-            muestra_ase = len(df_ase)
+        if col_asesor_int:
+            asesores_int = df_interna_filtrado[col_asesor_int].dropna().unique()
+            ranking_data_int = []
             
-            # Cálculos de NPS
-            nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
-            nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
-            nps_q8, _, _, _ = calcular_metricas_nps(df_ase, "Q8 - Competencia Asesor de Servicio")
-            nps_q10, _, _, _ = calcular_metricas_nps(df_ase, "Q10 - Explicación presupuesto")
-            nps_q11, _, _, _ = calcular_metricas_nps(df_ase, "Q11 - Explicación trabajo - costo")
-            
-            # Cálculo de la meta de promotores faltantes
-            t_validos = p_q2 + n_q2 + d_q2
-            if nps_q2 >= 94.0:
-                meta_str = "✅ Alcanzado"
-            elif t_validos > 0:
-                faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
-                faltantes = max(0, faltantes)
-                meta_str = f"Faltan {faltantes} Promotor{'es' if faltantes != 1 else ''}"
-            else:
-                meta_str = "Sin datos"
-            
-            ranking_data.append({
-                "Asesor de Servicio": p_asesor,
-                "NPS Q2 (Recomendación)": nps_q2,
-                "Muestra": muestra_ase,
-                "NPS Q7 (Cortesía)": nps_q7,
-                "NPS Q8 (Competencia)": nps_q8,
-                "NPS Q10 (Presupuesto)": nps_q10,
-                "NPS Q11 (Trabajo/Costo)": nps_q11,
-                "Meta 94%": meta_str
-            })
-            
-        df_ranking = pd.DataFrame(ranking_data).sort_values(by="NPS Q2 (Recomendación)", ascending=False)
-        st.dataframe(df_ranking, use_container_width=True, hide_index=True)
-    else:
-        st.warning("Para activar esta pestaña, asegúrate de tener una columna que contenga la palabra 'Asesor' en tu hoja 'Enc. de Marca'.")
+            for p_asesor in asesores_int:
+                df_ase_i = df_interna_filtrado[df_interna_filtrado[col_asesor_int] == p_asesor]
+                
+                nps_rec_i, _, _, _ = calcular_metricas_nps(df_ase_i, "1-NPS")
+                prom_i = calcular_promedio(df_ase_i, "Promedio")
+                nps_turno, _, _, _ = calcular_metricas_nps(df_ase_i, "2-Obtener turno")
+                nps_atencion, _, _, _ = calcular_metricas_nps(df_ase_i, "4-Atención de necesidades")
+                nps_calidad, _, _, _ = calcular_metricas_nps(df_ase_i, "6-Calidad de trabajo")
+                nps_limpieza, _, _, _ = calcular_metricas_nps(df_ase_i, "7-Limpieza del vehículo")
+                
+                ranking_data_int.append({
+                    "Asesor de Servicio": p_asesor,
+                    "Muestra": len(df_ase_i),
+                    "Recomendación (1-NPS)": nps_rec_i,
+                    "Satisfacción (Promedio)": prom_i,
+                    "Turno (NPS)": nps_turno,
+                    "Atención (NPS)": nps_atencion,
+                    "Calidad Trabajo (NPS)": nps_calidad,
+                    "Limpieza (NPS)": nps_limpieza
+                })
+                
+            df_ranking_int = pd.DataFrame(ranking_data_int).sort_values(by="Recomendación (1-NPS)", ascending=False)
+            st.dataframe(df_ranking_int, use_container_width=True, hide_index=True)
+        else:
+            st.warning("La columna 'Asesor' no se encontró en la base de datos Interna.")
 
 # ------------------------------------------------------------------------------
-# 3. FICHA HISTÓRICA POR ASESOR (COMPLETAMENTE REDISEÑADA Y BENCHMARKING)
+# 3. FICHA HISTÓRICA POR ASESOR (CRUCE DE LA VERDAD MARCA VS INTERNA)
 # ------------------------------------------------------------------------------
 with tab_ficha:
-    st.markdown("### Evolución Histórica de Calidad (vs Promedio Taller)")
-    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza la información total acumulada sin restricciones de los filtros globales de Año/Mes. La línea gris muestra el desempeño promedio de Autociel.</p>", unsafe_allow_html=True)
+    st.markdown("### Evolución Histórica de Calidad (Cruce Marca vs Interna)")
+    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza el historial completo de cada asesor. Cruza el rendimiento oficial de la Marca frente a la evaluación Interna del concesionario.</p>", unsafe_allow_html=True)
     
-    if col_asesor_key:
-        # ATENCIÓN: Usamos df_marca_raw para no estar limitados por el filtro lateral
-        lista_asesores_hist = sorted(df_marca_raw[col_asesor_key].dropna().unique())
+    # Obtener lista única de asesores combinando ambas bases
+    asesores_m = set(df_marca_raw[col_asesor_key].dropna().unique()) if col_asesor_key else set()
+    asesores_i = set(df_int_raw["Asesor"].dropna().unique()) if "Asesor" in df_int_raw.columns else set()
+    lista_asesores_hist = sorted(list(asesores_m.union(asesores_i)))
+    
+    if lista_asesores_hist:
         asesor_seleccionado_hist = st.selectbox("Seleccione el Asesor de Servicio para ver su historial:", options=lista_asesores_hist)
         
-        df_hist_ase = df_marca_raw[df_marca_raw[col_asesor_key] == asesor_seleccionado_hist]
+        # Filtrar bases históricas
+        df_hist_ase_m = df_marca_raw[df_marca_raw[col_asesor_key] == asesor_seleccionado_hist] if col_asesor_key else pd.DataFrame()
+        df_hist_ase_i = df_int_raw[df_int_raw["Asesor"] == asesor_seleccionado_hist] if "Asesor" in df_int_raw.columns else pd.DataFrame()
         
-        # --- TARJETAS KPI SUPERIORES ---
-        c_kpi1, c_kpi2, c_kpi3 = st.columns(3)
+        # --- TARJETAS KPI SUPERIORES DOBLES ---
+        col_kpi_m, col_kpi_i = st.columns(2)
         
-        nps_hist_q2, _, _, _ = calcular_metricas_nps(df_hist_ase, "Q2 - Recomendación - taller")
-        with c_kpi1:
-            st.markdown(f"""
-                <div class='kpi-card'>
-                    <div class='kpi-label'>NPS RECOMENDACIÓN ACUMULADO</div>
-                    <div class='kpi-value'>{nps_hist_q2}%</div>
-                    <div class='kpi-sub'>Historial Completo Q2</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        nps_hist_q1, _, _, _ = calcular_metricas_nps(df_hist_ase, "Q1 - Satisfacción general")
-        with c_kpi2:
-            st.markdown(f"""
-                <div class='kpi-card'>
-                    <div class='kpi-label'>NPS SATISFACCIÓN ACUMULADO</div>
-                    <div class='kpi-value'>{nps_hist_q1}%</div>
-                    <div class='kpi-sub'>Historial Completo Q1</div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-        with c_kpi3:
-            st.markdown(f"""
-                <div class='kpi-card'>
-                    <div class='kpi-label'>MUESTRA TOTAL ACUMULADA</div>
-                    <div class='kpi-value'>{len(df_hist_ase)}</div>
-                    <div class='kpi-sub'>Encuestas Analizadas</div>
-                </div>
-            """, unsafe_allow_html=True)
+        with col_kpi_m:
+            st.markdown("<h4 style='text-align:center; color:#2563EB;'>Acumulado Marca</h4>", unsafe_allow_html=True)
+            k1, k2, k3 = st.columns(3)
+            with k1: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q2 - Recomendación - taller')[0]}%</div></div>", unsafe_allow_html=True)
+            with k2: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q1 - Satisfacción general')[0]}%</div></div>", unsafe_allow_html=True)
+            with k3: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_hist_ase_m)}</div></div>", unsafe_allow_html=True)
+
+        with col_kpi_i:
+            st.markdown("<h4 style='text-align:center; color:#10B981;'>Acumulado Interno</h4>", unsafe_allow_html=True)
+            k4, k5, k6 = st.columns(3)
+            with k4: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_i, '1-NPS')[0]}%</div></div>", unsafe_allow_html=True)
+            with k5: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_promedio(df_hist_ase_i, 'Promedio')}%</div></div>", unsafe_allow_html=True)
+            with k6: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_hist_ase_i)}</div></div>", unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # --- GRÁFICO DE LÍNEAS (EVOLUCIÓN MES A MES + BENCHMARKING) ---
-        if 'Mes_Num' in df_hist_ase.columns and 'Año' in df_hist_ase.columns:
-            
-            # Calcular promedios globales por mes para Benchmarking
-            global_nps = {}
+        # --- GRÁFICO UNIFICADO (CRUCE DE LÍNEAS) ---
+        hist_data_m = {}
+        if 'Mes_Num' in df_hist_ase_m.columns:
+            for (año, mes_num), grupo in df_hist_ase_m.groupby(['Año', 'Mes_Num']):
+                hist_data_m[(año, mes_num)] = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")[0]
+                
+        hist_data_i = {}
+        if 'Mes_Num' in df_hist_ase_i.columns:
+            for (año, mes_num), grupo in df_hist_ase_i.groupby(['Año', 'Mes_Num']):
+                hist_data_i[(año, mes_num)] = calcular_metricas_nps(grupo, "1-NPS")[0]
+                
+        # Promedio Global Taller (Marca)
+        global_nps = {}
+        if 'Mes_Num' in df_marca_raw.columns:
             for (año, mes), grupo in df_marca_raw.groupby(['Año', 'Mes_Num']):
                 global_nps[(año, mes)] = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")[0]
 
-            # Agrupar por Año y Mes Numérico para mantener el orden cronológico del Asesor
-            hist_data = []
-            agrupado = df_hist_ase.groupby(['Año', 'Mes_Num'])
+        # Combinar todos los periodos existentes en ambas bases
+        periodos_unicos = set(hist_data_m.keys()).union(set(hist_data_i.keys()))
+        
+        chart_data = []
+        for (año, mes_num) in periodos_unicos:
+            mes_nombre = MESES_ES.get(mes_num, "Desc")
+            chart_data.append({
+                "Periodo": f"{mes_nombre} {año}",
+                "Orden": año * 100 + mes_num, 
+                "NPS_Marca": hist_data_m.get((año, mes_num), None),
+                "NPS_Interna": hist_data_i.get((año, mes_num), None),
+                "NPS_Global": global_nps.get((año, mes_num), None)
+            })
             
-            for (año, mes_num), grupo in agrupado:
-                mes_nombre = MESES_ES.get(mes_num, "Desc")
-                nps_mensual_q2, _, _, _ = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")
-                hist_data.append({
-                    "Periodo": f"{mes_nombre} {año}",
-                    "Orden": año * 100 + mes_num, 
-                    "NPS_Asesor": nps_mensual_q2,
-                    "NPS_Global": global_nps.get((año, mes_num), 0),
-                    "Muestra": len(grupo)
-                })
+        if chart_data:
+            df_grafico = pd.DataFrame(chart_data).sort_values("Orden")
             
-            if hist_data:
-                df_grafico = pd.DataFrame(hist_data).sort_values("Orden")
-                
-                fig_line = go.Figure()
-                
-                # Benchmarking Global (Línea Gris Suave)
-                fig_line.add_trace(go.Scatter(
-                    x=df_grafico['Periodo'], 
-                    y=df_grafico['NPS_Global'], 
-                    mode='lines', 
-                    name='Promedio Taller', 
-                    line=dict(color='#CBD5E1', width=3), 
-                    hoverinfo='skip'
-                ))
-                
-                # Línea de tendencia del Asesor (Negra Fuerte)
-                fig_line.add_trace(go.Scatter(
-                    x=df_grafico['Periodo'], 
-                    y=df_grafico['NPS_Asesor'],
-                    mode='lines+markers+text',
-                    name=f'NPS {asesor_seleccionado_hist}',
-                    line=dict(color='#1E293B', width=3),
-                    marker=dict(size=10, color='#1E293B'),
-                    text=df_grafico['NPS_Asesor'].astype(str) + '%',
-                    textposition='top center',
-                    hovertemplate='<b>%{x}</b><br>Asesor: %{y}%<br>Encuestas: %{customdata}<extra></extra>',
-                    customdata=df_grafico['Muestra']
-                ))
-                
-                # Línea verde de Objetivo (94%)
-                fig_line.add_trace(go.Scatter(
-                    x=[df_grafico['Periodo'].iloc[0], df_grafico['Periodo'].iloc[-1]],
-                    y=[94, 94],
-                    mode='lines',
-                    name='Objetivo (94%)',
-                    line=dict(color='#22C55E', width=2, dash='dash'),
-                    hoverinfo='skip'
-                ))
-                
-                fig_line.update_layout(
-                    title={'text': "Evolución de NPS Q2 vs Promedio de Autociel", 'font': {'size': 16, 'color': '#1E293B'}},
-                    yaxis=dict(title='NPS (%)', range=[max(0, df_grafico['NPS_Asesor'].min() - 10), 105], showgrid=True, gridcolor='#E2E8F0'),
-                    xaxis=dict(showgrid=False),
-                    margin=dict(l=40, r=40, t=60, b=40),
-                    height=400,
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                
-                st.plotly_chart(fig_line, use_container_width=True)
-            else:
-                st.info("No hay suficientes datos históricos para generar el gráfico mensual.")
+            fig_line = go.Figure()
+            
+            # Benchmarking Global (Línea Gris Suave)
+            fig_line.add_trace(go.Scatter(
+                x=df_grafico['Periodo'], y=df_grafico['NPS_Global'], 
+                mode='lines', name='Promedio Taller (Marca)', line=dict(color='#CBD5E1', width=3), hoverinfo='skip'
+            ))
+            
+            # Línea de tendencia Asesor MARCA (Negra Fuerte)
+            fig_line.add_trace(go.Scatter(
+                x=df_grafico['Periodo'], y=df_grafico['NPS_Marca'],
+                mode='lines+markers+text', name=f'NPS Marca',
+                line=dict(color='#1E293B', width=3), marker=dict(size=10, color='#1E293B'),
+                text=df_grafico['NPS_Marca'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center',
+                hovertemplate='<b>%{x}</b><br>Marca: %{y}%<extra></extra>'
+            ))
+            
+            # Línea de tendencia Asesor INTERNA (Verde Fuerte)
+            fig_line.add_trace(go.Scatter(
+                x=df_grafico['Periodo'], y=df_grafico['NPS_Interna'],
+                mode='lines+markers+text', name=f'NPS Interno',
+                line=dict(color='#10B981', width=3), marker=dict(size=10, color='#10B981'),
+                text=df_grafico['NPS_Interna'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='bottom center',
+                hovertemplate='<b>%{x}</b><br>Interno: %{y}%<extra></extra>'
+            ))
+            
+            # Línea verde de Objetivo (94%)
+            fig_line.add_trace(go.Scatter(
+                x=[df_grafico['Periodo'].iloc[0], df_grafico['Periodo'].iloc[-1]], y=[94, 94],
+                mode='lines', name='Objetivo (94%)', line=dict(color='#22C55E', width=2, dash='dash'), hoverinfo='skip'
+            ))
+            
+            fig_line.update_layout(
+                title={'text': "Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", 'font': {'size': 16, 'color': '#1E293B'}},
+                yaxis=dict(title='NPS (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'),
+                xaxis=dict(showgrid=False),
+                margin=dict(l=40, r=40, t=60, b=40),
+                height=450,
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            st.plotly_chart(fig_line, use_container_width=True)
         else:
-            st.info("No se pudieron procesar las fechas para armar la línea de tiempo cronológica.")
-            
+            st.info("No hay suficientes datos históricos para generar el gráfico.")
     else:
-        st.info("Filtro por asesor no disponible (Revisa los nombres de las columnas).")
+        st.info("No se encontraron asesores en las bases de datos para analizar.")
 
 # ------------------------------------------------------------------------------
 # 4. ANÁLISIS DE CARGA OPERATIVA Y CAUSA RAÍZ (PESTAÑA EXPANDIDA)
