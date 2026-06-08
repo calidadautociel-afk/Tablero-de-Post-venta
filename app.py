@@ -124,34 +124,40 @@ def calcular_promedio(df, columna):
     if columna not in df.columns:
         return 0.0
     
+    # 1. Reemplazamos comas por puntos en caso de que venga como texto
     if df[columna].dtype == object:
         s_limpia = df[columna].astype(str).str.replace(',', '.')
     else:
         s_limpia = df[columna]
         
     valores = pd.to_numeric(s_limpia, errors='coerce').dropna()
+    
+    # 2. Filtramos: descartamos los 0 y cualquier valor irreal
     valores = valores[(valores > 0) & (valores <= 10)]
     
     if len(valores) == 0:
         return 0.0
         
+    # 3. Multiplicamos por 10 para escalarlo al reloj de 0-100% visualmente
     return round(valores.mean() * 10, 1)
 
 # --- VELOCÍMETROS ---
 def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     if is_promedio:
+        # Escala de tolerancia un poco más ajustada para promedios
         color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 80 else '#EF4444')
     else:
+        # Escala NPS
         color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 70 else '#EF4444')
 
     font_size = 20 if mini else 42
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
-        value=score, 
-        number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, 
+        value=score, # Ahora usa el valor de 0 a 100 siempre
+        number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, # Siempre con %
         gauge={
-            'axis': {'range': [0, 100], 'showticklabels': False}, 
+            'axis': {'range': [0, 100], 'showticklabels': False}, # Siempre escala a 100
             'bar': {'color': color_bar, 'thickness': 0.15},
             'bgcolor': "#F1F5F9",
             'borderwidth': 0,
@@ -313,7 +319,7 @@ with tab_monitor:
         with col_i1:
             score_i1 = calcular_promedio(df_interna_filtrado, "Promedio")
             st.plotly_chart(crear_velocimetro(score_i1, "SATISFACCIÓN (Promedio)", is_promedio=True), use_container_width=True)
-            st.markdown("<br><br><br>", unsafe_allow_html=True) 
+            st.markdown("<br><br><br>", unsafe_allow_html=True) # Espacio para alinear con los botones de la derecha
             
         with col_i2:
             score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_interna_filtrado, "1-NPS")
@@ -371,10 +377,17 @@ with tab_monitor:
                 elif st.session_state.filtro_comentarios_marca == 'Neutro': df_com_m = df_com_m[(q_base >= 7) & (q_base <= 8)]
                 elif st.session_state.filtro_comentarios_marca == 'Detractor': df_com_m = df_com_m[q_base <= 6]
                 
-            cols_m = ["Nombre del Cliente", "Fecha de la Encuesta", "Marca", "Q3 - Verbalización"]
-            cols_m = [c for c in cols_m if c in df_com_m.columns]
-            cm_view = df_com_m[cols_m].dropna(subset=["Q3 - Verbalización"])
+            # Búsqueda dinámica de columnas para Marca
+            col_nombre_m = next((c for c in df_com_m.columns if 'Nombre' in c or 'Cliente' in c), None)
+            col_fecha_m = next((c for c in df_com_m.columns if 'Fecha' in c or 'Marca temporal' in c), None)
             
+            cols_m = []
+            if col_nombre_m: cols_m.append(col_nombre_m)
+            if col_fecha_m: cols_m.append(col_fecha_m)
+            if "Marca" in df_com_m.columns: cols_m.append("Marca")
+            cols_m.append("Q3 - Verbalización")
+            
+            cm_view = df_com_m[cols_m].dropna(subset=["Q3 - Verbalización"])
             if len(cm_view) > 0: st.dataframe(cm_view, use_container_width=True, hide_index=True)
             else: st.info("Sin comentarios para este segmento.")
             
@@ -391,10 +404,17 @@ with tab_monitor:
                 elif st.session_state.filtro_comentarios_int == 'Neutro': df_com_i = df_com_i[(qi_base >= 7) & (qi_base <= 8)]
                 elif st.session_state.filtro_comentarios_int == 'Detractor': df_com_i = df_com_i[qi_base <= 6]
             
-            cols_i = ["Nombre del Cliente", "Marca temporal", "Marca", "CONCATENADO"]
-            cols_i = [c for c in cols_i if c in df_com_i.columns]
-            ci_view = df_com_i[cols_i].dropna(subset=["CONCATENADO"])
+            # Búsqueda dinámica de columnas para Interna
+            col_nombre_i = next((c for c in df_com_i.columns if 'Nombre' in c or 'Cliente' in c), None)
+            col_fecha_i = next((c for c in df_com_i.columns if 'Fecha' in c or 'Marca temporal' in c), None)
             
+            cols_i = []
+            if col_nombre_i: cols_i.append(col_nombre_i)
+            if col_fecha_i: cols_i.append(col_fecha_i)
+            if "Marca" in df_com_i.columns: cols_i.append("Marca")
+            cols_i.append("CONCATENADO")
+            
+            ci_view = df_com_i[cols_i].dropna(subset=["CONCATENADO"])
             if len(ci_view) > 0: st.dataframe(ci_view, use_container_width=True, hide_index=True)
             else: st.info("Sin comentarios para este segmento.")
 
