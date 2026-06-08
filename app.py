@@ -34,11 +34,20 @@ st.markdown("""
         opacity: 0.8;
         border-color: #1E293B;
     }
+    
+    /* Separador vertical para el Monitor Global */
+    .vertical-divider {
+        border-left: 2px solid #E2E8F0;
+        height: 100%;
+        margin-left: 10px;
+        margin-right: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# URL pública de Google Sheets
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
+# URLs públicas de Google Sheets (Ambas bases)
+SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
+SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
 
 # Mapeo de meses en español
 MESES_ES = {
@@ -46,20 +55,27 @@ MESES_ES = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
-# --- INICIALIZACIÓN DE SESSION STATE ---
-if 'filtro_comentarios' not in st.session_state:
-    st.session_state.filtro_comentarios = 'Todos'
+# --- INICIALIZACIÓN DE SESSION STATE (DOBLE) ---
+if 'filtro_comentarios_marca' not in st.session_state:
+    st.session_state.filtro_comentarios_marca = 'Todos'
+if 'filtro_comentarios_int' not in st.session_state:
+    st.session_state.filtro_comentarios_int = 'Todos'
 
-def set_filtro(tipo):
-    st.session_state.filtro_comentarios = tipo
+def set_filtro_marca(tipo):
+    st.session_state.filtro_comentarios_marca = tipo
+
+def set_filtro_int(tipo):
+    st.session_state.filtro_comentarios_int = tipo
 
 @st.cache_data(ttl=60)
-def load_data():
-    df = pd.read_csv(SHEET_URL)
+def load_data(url):
+    df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
     
-    if 'Fecha de la Encuesta' in df.columns:
-        df['Fecha_Clean'] = pd.to_datetime(df['Fecha de la Encuesta'], dayfirst=True, errors='coerce')
+    col_fecha = 'Fecha de la Encuesta' if 'Fecha de la Encuesta' in df.columns else 'Marca temporal'
+    
+    if col_fecha in df.columns:
+        df['Fecha_Clean'] = pd.to_datetime(df[col_fecha], dayfirst=True, errors='coerce')
         df['Año'] = df['Fecha_Clean'].dt.year.fillna(2026).astype(int)
         df['Mes_Num'] = df['Fecha_Clean'].dt.month.fillna(5).astype(int)
         df['Mes'] = df['Mes_Num'].map(MESES_ES)
@@ -71,16 +87,17 @@ def load_data():
     return df
 
 try:
-    df_raw = load_data()
+    df_marca_raw = load_data(SHEET_URL_MARCA)
+    df_int_raw = load_data(SHEET_URL_INTERNA)
 except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
 
-# --- BÚSQUEDA DINÁMICA DE COLUMNAS Q4 Y Q13 ---
-col_q4 = next((col for col in df_raw.columns if 'Q4' in col and 'Motivo' in col), None)
-col_q13 = next((col for col in df_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
+# --- BÚSQUEDA DINÁMICA DE COLUMNAS Q4 Y Q13 (Base Marca) ---
+col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' in col), None)
+col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
 
-# --- CÁLCULO MÉTRICAS NPS ---
+# --- CÁLCULOS MÉTRICAS ---
 def calcular_metricas_nps(df, columna):
     if columna not in df.columns:
         return 0.0, 0, 0, 0
@@ -103,23 +120,34 @@ def calcular_metricas_nps(df, columna):
     
     return nps_score, promotores, neutros, detractores
 
+def calcular_promedio(df, columna):
+    if columna not in df.columns:
+        return 0.0
+    valores = pd.to_numeric(df[columna], errors='coerce').dropna()
+    if len(valores) == 0:
+        return 0.0
+    # Multiplicamos por 10 para escalarlo al reloj de 0-100 visualmente
+    return round(valores.mean() * 10, 1)
+
 # --- VELOCÍMETROS ---
-def crear_velocimetro(score, titulo, mini=False):
-    if score >= 90:
-        color_bar = '#22C55E'
-    elif score >= 70:
-        color_bar = '#EAB308'
+def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
+    if is_promedio:
+        color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 80 else '#EF4444')
+        suff = ""
+        val_display = score / 10 # Para mostrar 9.5 en lugar de 95
     else:
-        color_bar = '#EF4444'
+        color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 70 else '#EF4444')
+        suff = "%"
+        val_display = score
 
     font_size = 20 if mini else 42
 
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
-        value=score,
-        number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}},
+        value=val_display,
+        number={'suffix': suff, 'font': {'size': font_size, 'color': '#1E293B'}},
         gauge={
-            'axis': {'range': [0, 100], 'showticklabels': False},
+            'axis': {'range': [0, 10 if is_promedio else 100], 'showticklabels': False},
             'bar': {'color': color_bar, 'thickness': 0.15},
             'bgcolor': "#F1F5F9",
             'borderwidth': 0,
@@ -170,23 +198,28 @@ def crear_torta(df, columna, titulo):
 # ==============================================================================
 st.sidebar.header("Filtros Globales")
 
-years_available = sorted(df_raw['Año'].unique(), reverse=True)
+years_available = sorted(df_marca_raw['Año'].unique(), reverse=True)
 selected_years = st.sidebar.multiselect("Año", options=years_available, default=years_available[:1])
 
 months_available = list(MESES_ES.values())
-existing_months = df_raw[df_raw['Año'].isin(selected_years)]['Mes'].unique()
+existing_months = df_marca_raw[df_marca_raw['Año'].isin(selected_years)]['Mes'].unique()
 selected_months = st.sidebar.multiselect("Seleccione Mes(es)", options=months_available, default=[m for m in months_available if m in existing_months][:1])
 
-if 'Marca' in df_raw.columns:
-    marcas_available = sorted(df_raw['Marca'].dropna().unique())
+if 'Marca' in df_marca_raw.columns:
+    marcas_available = sorted(df_marca_raw['Marca'].dropna().unique())
     selected_marcas = st.sidebar.multiselect("MARCA", options=marcas_available, default=marcas_available[:1] if marcas_available else [])
 else:
     selected_marcas = []
 
-# APLICAR FILTROS
-df_filtrado = df_raw[df_raw['Año'].isin(selected_years) & df_raw['Mes'].isin(selected_months)]
+# APLICAR FILTROS A AMBAS BASES
+df_filtrado = df_marca_raw[df_marca_raw['Año'].isin(selected_years) & df_marca_raw['Mes'].isin(selected_months)]
+df_interna_filtrado = df_int_raw[df_int_raw['Año'].isin(selected_years) & df_int_raw['Mes'].isin(selected_months)]
+
 if selected_marcas:
-    df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
+    if 'Marca' in df_filtrado.columns:
+        df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
+    if 'Marca' in df_interna_filtrado.columns:
+        df_interna_filtrado = df_interna_filtrado[df_interna_filtrado['Marca'].isin(selected_marcas)]
 
 # ==============================================================================
 # TÍTULO PRINCIPAL
@@ -206,49 +239,107 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas = st.tabs([
 ])
 
 # ------------------------------------------------------------------------------
-# 1. MONITOR GLOBAL COMPARATIVO
+# 1. MONITOR GLOBAL COMPARATIVO (PANTALLA DIVIDIDA)
 # ------------------------------------------------------------------------------
 with tab_monitor:
     st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(selected_months)}</div>", unsafe_allow_html=True)
-    st.markdown("🏢 **Datos de Origen: Encuestas de Marca**")
     
-    with st.container():
-        col_q1, col_q2, col_muestra = st.columns([4, 4, 2])
+    col_izq, col_mid, col_der = st.columns([10, 1, 10])
+    
+    # === LADO IZQUIERDO: ENCUESTA DE MARCA ===
+    with col_izq:
+        st.markdown("<h3 style='text-align:center; color:#2563EB;'>🏢 ENCUESTA DE MARCA</h3>", unsafe_allow_html=True)
+        st.markdown("---")
         
+        col_q1, col_q2 = st.columns(2)
         with col_q1:
             score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_filtrado, "Q1 - Satisfacción general")
             st.plotly_chart(crear_velocimetro(score_q1, "Q1 - SATISFACCIÓN (NPS)"), use_container_width=True)
             
             sub_c1, sub_c2, sub_c3 = st.columns(3)
-            with sub_c1:
-                st.button(f"😄 {p_q1} Prom", key="btn_prom_q1", on_click=set_filtro, args=('Promotor',), use_container_width=True)
-            with sub_c2:
-                st.button(f"😐 {n_q1} Neu", key="btn_neu_q1", on_click=set_filtro, args=('Neutro',), use_container_width=True)
-            with sub_c3:
-                st.button(f"😠 {d_q1} Det", key="btn_det_q1", on_click=set_filtro, args=('Detractor',), use_container_width=True)
+            with sub_c1: st.button(f"😄 {p_q1}", key="btn_m_p1", on_click=set_filtro_marca, args=('Promotor',))
+            with sub_c2: st.button(f"😐 {n_q1}", key="btn_m_n1", on_click=set_filtro_marca, args=('Neutro',))
+            with sub_c3: st.button(f"😠 {d_q1}", key="btn_m_d1", on_click=set_filtro_marca, args=('Detractor',))
 
         with col_q2:
             score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_filtrado, "Q2 - Recomendación - taller")
             st.plotly_chart(crear_velocimetro(score_q2, "Q2 - RECOMENDACIÓN (NPS)"), use_container_width=True)
             
             sub_c4, sub_c5, sub_c6 = st.columns(3)
-            with sub_c4:
-                st.button(f"😄 {p_q2} Prom", key="btn_prom_q2", on_click=set_filtro, args=('Promotor',), use_container_width=True)
-            with sub_c5:
-                st.button(f"😐 {n_q2} Neu", key="btn_neu_q2", on_click=set_filtro, args=('Neutro',), use_container_width=True)
-            with sub_c6:
-                st.button(f"😠 {d_q2} Det", key="btn_det_q2", on_click=set_filtro, args=('Detractor',), use_container_width=True)
+            with sub_c4: st.button(f"😄 {p_q2}", key="btn_m_p2", on_click=set_filtro_marca, args=('Promotor',))
+            with sub_c5: st.button(f"😐 {n_q2}", key="btn_m_n2", on_click=set_filtro_marca, args=('Neutro',))
+            with sub_c6: st.button(f"😠 {d_q2}", key="btn_m_d2", on_click=set_filtro_marca, args=('Detractor',))
             
-        with col_muestra:
-            st.markdown("<br><br>", unsafe_allow_html=True)
-            st.markdown(f"""
-                <div class='muestra-box'>
-                    <span style='font-size: 14px; color: #64748B; font-weight: bold;'>Muestra</span><br>
-                    <span style='font-size: 42px; color: #0F172A; font-weight: bold;'>{len(df_filtrado)}</span>
-                </div>
-            """, unsafe_allow_html=True)
+        st.markdown(f"<div class='muestra-box' style='margin-top:15px;'>Muestra: <b>{len(df_filtrado)}</b> encuestas</div>", unsafe_allow_html=True)
+        
+        # Sub-pestañas operativas de Marca
+        st.markdown("<br>", unsafe_allow_html=True)
+        subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs([
+            "📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont."
+        ])
+        
+        with subtab_agendamiento:
+            c1, c2 = st.columns(2)
+            with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
+            with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q6 - Satisfacción instalaciones")[0], "Q6 - Instalaciones", mini=True), use_container_width=True)
+        with subtab_asesor:
+            c1, c2, c3, c4 = st.columns(4)
+            with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q7 - Cortesía y Amabilidad")[0], "Q7 - Cortesía", mini=True), use_container_width=True)
+            with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q8 - Competencia Asesor de Servicio")[0], "Q8 - Competencia", mini=True), use_container_width=True)
+            with c3: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto", mini=True), use_container_width=True)
+            with c4: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q11 - Explicación trabajo - costo")[0], "Q11 - Expl. Trabajo", mini=True), use_container_width=True)
+        with subtab_taller:
+            c1, c2, c3 = st.columns(3)
+            with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q12 - Calidad del trabajo")[0], "Q12 - Calidad", mini=True), use_container_width=True)
+            with c2: st.plotly_chart(crear_torta(df_filtrado, "Q13 - Trabajo realizado en primera visita", "Q13 - FIR"), use_container_width=True)
+            with c3: st.plotly_chart(crear_torta(df_filtrado, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
+        with subtab_contacto:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
 
-    # CSS botones P/N/D
+    # === SEPARADOR ===
+    with col_mid:
+        st.markdown("<div class='vertical-divider'></div>", unsafe_allow_html=True)
+
+    # === LADO DERECHO: ENCUESTA INTERNA ===
+    with col_der:
+        st.markdown("<h3 style='text-align:center; color:#10B981;'>🎯 ENCUESTA INTERNA</h3>", unsafe_allow_html=True)
+        st.markdown("---")
+        
+        col_i1, col_i2 = st.columns(2)
+        with col_i1:
+            score_i1 = calcular_promedio(df_interna_filtrado, "Promedio")
+            st.plotly_chart(crear_velocimetro(score_i1, "SATISFACCIÓN (Promedio)", is_promedio=True), use_container_width=True)
+            st.markdown("<br><br><br>", unsafe_allow_html=True) # Espacio para alinear con los botones de la derecha
+            
+        with col_i2:
+            score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_interna_filtrado, "1-NPS")
+            st.plotly_chart(crear_velocimetro(score_i2, "RECOMENDACIÓN (NPS)"), use_container_width=True)
+            
+            sub_i4, sub_i5, sub_i6 = st.columns(3)
+            with sub_i4: st.button(f"😄 {p_i2}", key="btn_i_p2", on_click=set_filtro_int, args=('Promotor',))
+            with sub_i5: st.button(f"😐 {n_i2}", key="btn_i_n2", on_click=set_filtro_int, args=('Neutro',))
+            with sub_i6: st.button(f"😠 {d_i2}", key="btn_i_d2", on_click=set_filtro_int, args=('Detractor',))
+            
+        st.markdown(f"<div class='muestra-box' style='margin-top:15px;'>Muestra: <b>{len(df_interna_filtrado)}</b> encuestas</div>", unsafe_allow_html=True)
+        
+        # Sub-pestañas operativas Interna
+        st.markdown("<br>", unsafe_allow_html=True)
+        subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs([
+            "📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont."
+        ])
+        
+        with subtab_agend_int:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
+        with subtab_asesor_int:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "4-Atención de necesidades")[0], "4-Atención necesidades", mini=True), use_container_width=True)
+        with subtab_taller_int:
+            c1, c2 = st.columns(2)
+            with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "6-Calidad de trabajo")[0], "6-Calidad trabajo", mini=True), use_container_width=True)
+            with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "7-Limpieza del vehículo")[0], "7-Limpieza", mini=True), use_container_width=True)
+        with subtab_contacto_int:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
+
+    # --- CSS botones P/N/D Global ---
     st.markdown("""
         <style>
         button[kind="secondary"] { background-color: transparent; }
@@ -258,99 +349,48 @@ with tab_monitor:
         </style>
     """, unsafe_allow_html=True)
 
+    # === TABLA GLOBAL DE COMENTARIOS DOBLE ===
     st.markdown("---")
-    st.markdown("<p style='font-size: 14px; color: #475569;'><b>Segmentación actual Marca:</b> Todos</p>", unsafe_allow_html=True)
+    st.markdown("### 💬 Comentarios de Clientes")
+    col_com_m, col_com_i = st.columns(2)
     
-    # --- PESTAÑAS OPERATIVAS AJUSTADAS ---
-    subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs([
-        "📅 Agendamiento e Instalaciones", 
-        "👔 Atención del Asesor", 
-        "⚙️ Calidad y Taller", 
-        "📞 Contacto Posterior"
-    ])
-    
-    with subtab_agendamiento:
-        c1, c2 = st.columns(2)
-        with c1:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q5 - Facilidad de agendamiento")
-            st.plotly_chart(crear_velocimetro(score, "Q5 - Facilidad de Agendamiento", mini=True), use_container_width=True)
-        with c2:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q6 - Satisfacción instalaciones")
-            st.plotly_chart(crear_velocimetro(score, "Q6 - Satisfacción Instalaciones", mini=True), use_container_width=True)
-            
-    with subtab_asesor:
-        c1, c2, c3, c4, c5 = st.columns(5)
-        with c1:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q7 - Cortesía y Amabilidad")
-            st.plotly_chart(crear_velocimetro(score, "Q7 - Cortesía y Amabilidad", mini=True), use_container_width=True)
-        with c2:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q8 - Competencia Asesor de Servicio")
-            st.plotly_chart(crear_velocimetro(score, "Q8 - Competencia Asesor", mini=True), use_container_width=True)
-        with c3:
-            st.plotly_chart(crear_torta(df_filtrado, "Q9 - Oferta movilidad", "Q9 - Oferta Movilidad"), use_container_width=True)
-        with c4:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q10 - Explicación presupuesto")
-            st.plotly_chart(crear_velocimetro(score, "Q10 - Explicación Presupuesto", mini=True), use_container_width=True)
-        with c5:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q11 - Explicación trabajo - costo")
-            st.plotly_chart(crear_velocimetro(score, "Q11 - Explicación Trabajo/Costo", mini=True), use_container_width=True)
-
-    with subtab_taller:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q12 - Calidad del trabajo")
-            st.plotly_chart(crear_velocimetro(score, "Q12 - Calidad del Trabajo", mini=True), use_container_width=True)
-        with c2:
-            st.plotly_chart(crear_torta(df_filtrado, "Q13 - Trabajo realizado en primera visita", "Q13 - Reparado 1ra Visita (FIR)"), use_container_width=True)
-        with c3:
-            st.plotly_chart(crear_torta(df_filtrado, "Q14 - Motivo del trabajo no realizado", "Q14 - Motivo Trabajo No Realizado"), use_container_width=True)
-            
-        c4, c5 = st.columns(2)
-        with c4:
-            st.plotly_chart(crear_torta(df_filtrado, "Q15 - Entrega según momento acordado", "Q15 - Entrega a Tiempo"), use_container_width=True)
-        with c5:
-            st.plotly_chart(crear_torta(df_filtrado, "Q16 - Información del retraso", "Q16 - Información de Retraso"), use_container_width=True)
-
-    with subtab_contacto:
-        c1, c2 = st.columns(2)
-        with c1:
-            st.plotly_chart(crear_torta(df_filtrado, "Q18 - Contactado", "Q18 - Contactado"), use_container_width=True)
-        with c2:
-            score, _, _, _ = calcular_metricas_nps(df_filtrado, "Q19 - Satisfacción con el Contacto")
-            st.plotly_chart(crear_velocimetro(score, "Q19 - Satisfacción con Contacto", mini=True), use_container_width=True)
-
-    # --- TABLA GLOBAL DE COMENTARIOS INYECTADA ---
-    st.markdown("---")
-    col_tit, col_btn = st.columns([8, 2])
-    with col_tit:
-        st.markdown(f"#### 💬 Comentarios de Clientes: Segmento **{st.session_state.filtro_comentarios}**")
-    with col_btn:
-        if st.session_state.filtro_comentarios != 'Todos':
-            st.button("🔄 Ver Todos", on_click=set_filtro, args=('Todos',), use_container_width=True)
-    
-    if "Q3 - Verbalización" in df_filtrado.columns:
-        df_comentarios = df_filtrado.copy()
+    with col_com_m:
+        st.markdown(f"**🏢 Marca (Filtro: {st.session_state.filtro_comentarios_marca})**")
+        if st.session_state.filtro_comentarios_marca != 'Todos':
+            st.button("🔄 Ver Todos (Marca)", on_click=set_filtro_marca, args=('Todos',))
         
-        if st.session_state.filtro_comentarios != 'Todos':
-            q_base = pd.to_numeric(df_comentarios["Q1 - Satisfacción general"], errors='coerce')
-            if st.session_state.filtro_comentarios == 'Promotor':
-                df_comentarios = df_comentarios[q_base >= 9]
-            elif st.session_state.filtro_comentarios == 'Neutro':
-                df_comentarios = df_comentarios[(q_base >= 7) & (q_base <= 8)]
-            elif st.session_state.filtro_comentarios == 'Detractor':
-                df_comentarios = df_comentarios[q_base <= 6]
-                
-        comentarios_mostrar = df_comentarios[["Fecha de la Encuesta", "Marca", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
-        
-        if len(comentarios_mostrar) > 0:
-            st.dataframe(comentarios_mostrar, use_container_width=True, hide_index=True)
-        else:
-            st.info(f"No hay comentarios registrados para el segmento '{st.session_state.filtro_comentarios}' en el período seleccionado.")
-    else:
-        st.info("No se encontró la columna 'Q3 - Verbalización' en la base de datos.")
+        if "Q3 - Verbalización" in df_filtrado.columns:
+            df_com_m = df_filtrado.copy()
+            if st.session_state.filtro_comentarios_marca != 'Todos':
+                q_base = pd.to_numeric(df_com_m["Q1 - Satisfacción general"], errors='coerce')
+                if st.session_state.filtro_comentarios_marca == 'Promotor': df_com_m = df_com_m[q_base >= 9]
+                elif st.session_state.filtro_comentarios_marca == 'Neutro': df_com_m = df_com_m[(q_base >= 7) & (q_base <= 8)]
+                elif st.session_state.filtro_comentarios_marca == 'Detractor': df_com_m = df_com_m[q_base <= 6]
+            cm_view = df_com_m[["Fecha de la Encuesta", "Marca", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
+            if len(cm_view) > 0: st.dataframe(cm_view, use_container_width=True, hide_index=True)
+            else: st.info("Sin comentarios para este segmento.")
+            
+    with col_com_i:
+        st.markdown(f"**🎯 Interna (Filtro: {st.session_state.filtro_comentarios_int})**")
+        if st.session_state.filtro_comentarios_int != 'Todos':
+            st.button("🔄 Ver Todos (Interna)", on_click=set_filtro_int, args=('Todos',))
+            
+        if "CONCATENADO" in df_interna_filtrado.columns:
+            df_com_i = df_interna_filtrado.copy()
+            if st.session_state.filtro_comentarios_int != 'Todos':
+                qi_base = pd.to_numeric(df_com_i["1-NPS"], errors='coerce')
+                if st.session_state.filtro_comentarios_int == 'Promotor': df_com_i = df_com_i[qi_base >= 9]
+                elif st.session_state.filtro_comentarios_int == 'Neutro': df_com_i = df_com_i[(qi_base >= 7) & (qi_base <= 8)]
+                elif st.session_state.filtro_comentarios_int == 'Detractor': df_com_i = df_com_i[qi_base <= 6]
+            
+            # Usar Marca temporal si existe, si no solo Concatenado
+            cols_i = ["Marca temporal", "CONCATENADO"] if "Marca temporal" in df_com_i.columns else ["CONCATENADO"]
+            ci_view = df_com_i[cols_i].dropna(subset=["CONCATENADO"])
+            if len(ci_view) > 0: st.dataframe(ci_view, use_container_width=True, hide_index=True)
+            else: st.info("Sin comentarios para este segmento.")
 
 # ------------------------------------------------------------------------------
-# 2. TABLA UNIFICADA DE ASESORES
+# 2. TABLA UNIFICADA DE ASESORES (Mantenida Base MARCA como acordamos)
 # ------------------------------------------------------------------------------
 with tab_tabla:
     st.markdown("### Ranking de Desempeño General de Asesores")
@@ -407,11 +447,11 @@ with tab_ficha:
     st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza la información total acumulada sin restricciones de los filtros globales de Año/Mes. La línea gris muestra el desempeño promedio de Autociel.</p>", unsafe_allow_html=True)
     
     if col_asesor_key:
-        # ATENCIÓN: Usamos df_raw para no estar limitados por el filtro lateral
-        lista_asesores_hist = sorted(df_raw[col_asesor_key].dropna().unique())
+        # ATENCIÓN: Usamos df_marca_raw para no estar limitados por el filtro lateral
+        lista_asesores_hist = sorted(df_marca_raw[col_asesor_key].dropna().unique())
         asesor_seleccionado_hist = st.selectbox("Seleccione el Asesor de Servicio para ver su historial:", options=lista_asesores_hist)
         
-        df_hist_ase = df_raw[df_raw[col_asesor_key] == asesor_seleccionado_hist]
+        df_hist_ase = df_marca_raw[df_marca_raw[col_asesor_key] == asesor_seleccionado_hist]
         
         # --- TARJETAS KPI SUPERIORES ---
         c_kpi1, c_kpi2, c_kpi3 = st.columns(3)
@@ -452,7 +492,7 @@ with tab_ficha:
             
             # Calcular promedios globales por mes para Benchmarking
             global_nps = {}
-            for (año, mes), grupo in df_raw.groupby(['Año', 'Mes_Num']):
+            for (año, mes), grupo in df_marca_raw.groupby(['Año', 'Mes_Num']):
                 global_nps[(año, mes)] = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")[0]
 
             # Agrupar por Año y Mes Numérico para mantener el orden cronológico del Asesor
