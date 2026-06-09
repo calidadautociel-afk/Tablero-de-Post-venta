@@ -280,8 +280,6 @@ with tab_monitor:
             with sub_c5: st.button(f"😐 {n_q2}", key="btn_m_n2", on_click=set_filtro_marca, args=('Neutro',))
             with sub_c6: st.button(f"😠 {d_q2}", key="btn_m_d2", on_click=set_filtro_marca, args=('Detractor',))
             
-        st.markdown(f"<div class='muestra-box' style='margin-top:15px;'>Muestra: <b>{len(df_filtrado)}</b> encuestas</div>", unsafe_allow_html=True)
-        
         # Sub-pestañas operativas de Marca
         st.markdown("<br>", unsafe_allow_html=True)
         subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs([
@@ -330,8 +328,6 @@ with tab_monitor:
             with sub_i5: st.button(f"😐 {n_i2}", key="btn_i_n2", on_click=set_filtro_int, args=('Neutro',))
             with sub_i6: st.button(f"😠 {d_i2}", key="btn_i_d2", on_click=set_filtro_int, args=('Detractor',))
             
-        st.markdown(f"<div class='muestra-box' style='margin-top:15px;'>Muestra: <b>{len(df_interna_filtrado)}</b> encuestas</div>", unsafe_allow_html=True)
-        
         # Sub-pestañas operativas Interna
         st.markdown("<br>", unsafe_allow_html=True)
         subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs([
