@@ -219,14 +219,15 @@ st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-it
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
-# PESTAÑAS PRINCIPALES
+# PESTAÑAS PRINCIPALES (SE AGREGA LA PESTAÑA TELEMARKETER)
 # ==============================================================================
-tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas = st.tabs([
+tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer = st.tabs([
     "🏠 Monitor Global Comparativo", 
     "👥 Tabla Unificada de Asesores", 
     "👤 Ficha Histórica Asesor", 
     "📊 Análisis de Carga Operativa",
-    "⚠️ Gestión de Quejas"
+    "⚠️ Gestión de Quejas",
+    "📞 Telemarketer"
 ])
 
 # ------------------------------------------------------------------------------
@@ -509,18 +510,18 @@ with tab_ficha:
         with st.container(border=True):
             hist_data_m = {}
             if 'Mes_Num' in df_hist_ase_m.columns:
-                for (año, mes_num), grupo in df_hist_ase_m.groupby(['Año', 'Mes_Num']):
-                    hist_data_m[(año, mes_num)] = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")[0]
+                for (año, mes_num), group in df_hist_ase_m.groupby(['Año', 'Mes_Num']):
+                    hist_data_m[(año, mes_num)] = calcular_metricas_nps(group, "Q2 - Recomendación - taller")[0]
                     
             hist_data_i = {}
             if 'Mes_Num' in df_hist_ase_i.columns:
-                for (año, mes_num), grupo in df_hist_ase_i.groupby(['Año', 'Mes_Num']):
-                    hist_data_i[(año, mes_num)] = calcular_metricas_nps(grupo, "1-NPS")[0]
+                for (año, mes_num), group in df_hist_ase_i.groupby(['Año', 'Mes_Num']):
+                    hist_data_i[(año, mes_num)] = calcular_metricas_nps(group, "1-NPS")[0]
                     
             global_nps = {}
             if 'Mes_Num' in df_marca_raw.columns:
-                for (año, mes), grupo in df_marca_raw.groupby(['Año', 'Mes_Num']):
-                    global_nps[(año, mes)] = calcular_metricas_nps(grupo, "Q2 - Recomendación - taller")[0]
+                for (año, mes), group in df_marca_raw.groupby(['Año', 'Mes_Num']):
+                    global_nps[(año, mes)] = calcular_metricas_nps(group, "Q2 - Recomendación - taller")[0]
 
             periodos_unicos = set(hist_data_m.keys()).union(set(hist_data_i.keys()))
             
@@ -616,7 +617,6 @@ with tab_carga:
                 
                 df_carga_int = df_interna_filtrado.copy()
                 if palabra_clave:
-                    # Filtra las filas donde el CONCATENADO contenga la palabra clave (ignorando mayúsculas/minúsculas)
                     df_carga_int = df_carga_int[df_carga_int["CONCATENADO"].str.contains(palabra_clave, case=False, na=False)]
                 
                 col_nombre_i = 'Cliente' if 'Cliente' in df_carga_int.columns else next((c for c in df_carga_int.columns if 'Nombre' in c), None)
@@ -671,3 +671,142 @@ with tab_quejas:
                 st.success("🎉 ¡Excelente! No se registraron clientes detractores para los filtros seleccionados.")
         else:
             st.info("Columnas de análisis de quejas no encontradas.")
+
+# ------------------------------------------------------------------------------
+# 6. PESTAÑA NUEVA: TELEMARKETER (SE MANTIENE AISLADA DE FILTROS GLOBALES)
+# ------------------------------------------------------------------------------
+with tab_telemarketer:
+    st.markdown("### 📞 Control y Efectividad de Canales (Telemarketing)")
+    st.markdown("Esta sección funciona de forma independiente utilizando la columna **'Fecha Cierre'** para segmentar los tiempos.")
+    
+    # Procesar columna Fecha Cierre de forma segura en una copia local
+    df_tele_base = df_int_raw.copy()
+    col_cierre = "Fecha Cierre"
+    
+    if col_cierre in df_tele_base.columns:
+        df_tele_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_tele_base[col_cierre], dayfirst=True, errors='coerce')
+        df_tele_base['Año_Cierre'] = df_tele_base['Fecha_Cierre_Clean'].dt.year
+        df_tele_base['Mes_Cierre_Num'] = df_tele_base['Fecha_Cierre_Clean'].dt.month
+        
+        # Eliminar registros sin fecha de cierre válida para no entorpecer los filtros
+        df_tele_base = df_tele_base.dropna(subset=['Año_Cierre', 'Mes_Cierre_Num'])
+        df_tele_base['Año_Cierre'] = df_tele_base['Año_Cierre'].astype(int)
+        df_tele_base['Mes_Cierre_Num'] = df_tele_base['Mes_Cierre_Num'].astype(int)
+        df_tele_base['Mes_Cierre_Nombre'] = df_tele_base['Mes_Cierre_Num'].map(MESES_ES)
+        
+        # Filtro de Año INTERNO exclusivo para esta pestaña
+        anios_cierre_disponibles = sorted(df_tele_base['Año_Cierre'].unique(), reverse=True)
+        
+        if anios_cierre_disponibles:
+            anio_tele_sel = st.selectbox("Seleccione Año de Cierre para Análisis:", options=anios_cierre_disponibles, key="sb_anio_tele")
+            
+            # Filtrar dataframe base por el año interno seleccionado
+            df_tele_filtrado = df_tele_base[df_tele_base['Año_Cierre'] == anio_tele_sel]
+            
+            st.markdown("---")
+            st.markdown(f"#### 📈 Evolución Mensual de Comunicación Efectiva ({anio_tele_sel})")
+            
+            # Agrupar datos mes a mes (1 al 12) para armar el gráfico evolutivo lineal
+            meses_con_datos = sorted(df_tele_filtrado['Mes_Cierre_Num'].unique())
+            
+            line_data = []
+            for m_num in range(1, 13):
+                df_mes = df_tele_filtrado[df_tele_filtrado['Mes_Cierre_Num'] == m_num]
+                
+                # Definición de conteos basándose en 'Tipo Contacto' (incluyendo nulos como vacíos)
+                if 'Tipo Contacto' in df_mes.columns:
+                    # Rellenar nulos con un identificador común temporal
+                    s_contacto = df_mes['Tipo Contacto'].fillna('Vacío').astype(str).str.strip()
+                    
+                    c_whatsapp = len(s_contacto[s_contacto == 'Whatsapp'])
+                    c_telefonico = len(s_contacto[s_contacto == 'Telefonico'])
+                    c_vacios = len(s_contacto[s_contacto == 'Vacío'])
+                    
+                    total_intentos = c_whatsapp + c_telefonico + c_vacios
+                    
+                    if total_intentos > 0:
+                        pct_global = round((c_whatsapp + c_telefonico) / total_intentos * 100, 1)
+                        pct_virtual = round(c_whatsapp / total_intentos * 100, 1)
+                        pct_human = round(c_telefonico / total_intentos * 100, 1)
+                    else:
+                        pct_global, pct_virtual, pct_human = None, None, None
+                else:
+                    pct_global, pct_virtual, pct_human = None, None, None
+                    
+                if m_num in meses_con_datos:
+                    line_data.append({
+                        "Mes_Nombre": MESES_ES[m_num],
+                        "Mes_Num": m_num,
+                        "Global": pct_global,
+                        "Virtual": pct_virtual,
+                        "Telemarketer": pct_human
+                    })
+            
+            if line_data:
+                df_line_chart = pd.DataFrame(line_data).sort_values("Mes_Num")
+                
+                fig_tele = go.Figure()
+                fig_tele.add_trace(go.Scatter(x=df_line_chart['Mes_Nombre'], y=df_line_chart['Global'], mode='lines+markers+text', name='Efectividad Global', line=dict(color='#1E293B', width=4), text=df_line_chart['Global'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center'))
+                fig_tele.add_trace(go.Scatter(x=df_line_chart['Mes_Nombre'], y=df_line_chart['Virtual'], mode='lines+markers', name='Asesor Virtual (WhatsApp)', line=dict(color='#2563EB', width=2, dash='dash')))
+                fig_tele.add_trace(go.Scatter(x=df_line_chart['Mes_Nombre'], y=df_line_chart['Telemarketer'], mode='lines+markers', name='Asesor Telemarketer (Telefónico)', line=dict(color='#10B981', width=2, dash='dot')))
+                
+                fig_tele.update_layout(
+                    yaxis=dict(title='Porcentaje (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'),
+                    xaxis=dict(showgrid=False),
+                    margin=dict(l=40, r=40, t=20, b=40),
+                    height=400,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_tele, use_container_width=True)
+            else:
+                st.info("Sin registros suficientes para generar el gráfico de líneas.")
+                
+            # --- SECCIÓN GRAFICOS DE TORTA MENSUALES ---
+            st.markdown("---")
+            st.markdown(f"#### 🍕 Desglose Mensual del Estado de Contacto ('Contactado' - {anio_tele_sel})")
+            
+            if 'Contactado' in df_tele_filtrado.columns:
+                # Filtrar nulos generales de la columna para graficar datos de estados válidos
+                df_torta_base = df_tele_filtrado.dropna(subset=['Contactado'])
+                meses_torta = sorted(df_torta_base['Mes_Cierre_Num'].unique())
+                
+                if meses_torta:
+                    # Crear grilla dinámica de columnas (3 por fila para optimizar espacios)
+                    cols_per_row = 3
+                    for i in range(0, len(meses_torta), cols_per_row):
+                        chunk_meses = meses_torta[i:i+cols_per_row]
+                        st_cols = st.columns(len(chunk_meses))
+                        
+                        for idx, m_num in enumerate(chunk_meses):
+                            with st_cols[idx]:
+                                df_mes_torta = df_torta_base[df_torta_base['Mes_Cierre_Num'] == m_num]
+                                counts_estado = df_mes_torta['Contactado'].value_counts()
+                                
+                                fig_pie = go.Figure(data=[go.Pie(
+                                    labels=counts_estado.index,
+                                    values=counts_estado.values,
+                                    hole=.4,
+                                    textinfo='percent',
+                                    textposition='inside'
+                                )])
+                                
+                                fig_pie.update_layout(
+                                    title={'text': f"<b>{MESES_ES[m_num]}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'font': {'size': 14, 'color': '#1E293B'}},
+                                    margin=dict(l=10, r=10, t=40, b=10),
+                                    height=230,
+                                    showlegend=True,
+                                    legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)),
+                                    paper_bgcolor='rgba(0,0,0,0)',
+                                    plot_bgcolor='rgba(0,0,0,0)'
+                                )
+                                st.plotly_chart(fig_pie, use_container_width=True)
+                else:
+                    st.info("No se registran datos cargados en la columna 'Contactado' para este año.")
+            else:
+                st.warning("La columna 'Contactado' no fue localizada en la hoja de datos.")
+        else:
+            st.info("No se encontraron años disponibles procesando la columna 'Fecha Cierre'.")
+    else:
+        st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Telemarketer.")
