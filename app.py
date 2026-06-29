@@ -493,7 +493,7 @@ with tab_ficha:
             with st.container(border=True):
                 st.markdown("<h4 style='text-align:center; color:#2563EB; margin-top: 10px;'>Acumulado Marca</h4>", unsafe_allow_html=True)
                 k1, k2, k3 = st.columns(3)
-                with k1: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q2 - Recomendación - Taller')[0]}%</div></div>", unsafe_allow_html=True)
+                with k1: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q2 - Recomendación - taller')[0]}%</div></div>", unsafe_allow_html=True)
                 with k2: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q1 - Satisfacción general')[0]}%</div></div>", unsafe_allow_html=True)
                 with k3: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_hist_ase_m)}</div></div>", unsafe_allow_html=True)
 
@@ -673,7 +673,7 @@ with tab_quejas:
             st.info("Columnas de análisis de quejas no encontradas.")
 
 # ------------------------------------------------------------------------------
-# 6. PESTAÑA: TELEMARKETER (ACTUALIZADA CON REFORMULACIÓN DE FÓRMULAS Y HOVER DE VOLÚMENES)
+# 6. PESTAÑA: TELEMARKETER (SE AGREGAN LOS % EN CADA VÉRTICE DE CADA LÍNEA)
 # ------------------------------------------------------------------------------
 with tab_telemarketer:
     st.markdown("### 📞 Control y Efectividad de Canales (Telemarketing)")
@@ -715,7 +715,6 @@ with tab_telemarketer:
                     c_telefonico = len(s_contacto[s_contacto == 'Telefonico'])
                     c_vacios = len(s_contacto[s_contacto == 'Vacío'])
                     
-                    # TOTAL DE INTENTOS EN GENERAL
                     total_intentos_global = c_whatsapp + c_telefonico + c_vacios
                     
                     # 1. EFECTIVIDAD VIRTUAL (WHATSAPP): Whatsapp / (Whatsapp + Vacios)
@@ -753,6 +752,7 @@ with tab_telemarketer:
                 custom_hover = "<b>%{x}</b><br>WhatsApp: %{customdata[0]}<br>Telefónico: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"
                 matrix_counts = df_line_chart[['Cant_WA', 'Cant_Tel', 'Cant_Vac']].values
                 
+                # Línea Global: Porcentajes arriba (top center)
                 fig_tele.add_trace(go.Scatter(
                     x=df_line_chart['Mes_Nombre'], y=df_line_chart['Global'], 
                     mode='lines+markers+text', name='Efectividad Global (Taller)', 
@@ -762,17 +762,23 @@ with tab_telemarketer:
                     customdata=matrix_counts, hovertemplate=custom_hover
                 ))
                 
+                # Línea Virtual: Porcentajes arriba (top center)
                 fig_tele.add_trace(go.Scatter(
                     x=df_line_chart['Mes_Nombre'], y=df_line_chart['Virtual'], 
-                    mode='lines+markers', name='Asesor Virtual (WhatsApp)', 
+                    mode='lines+markers+text', name='Asesor Virtual (WhatsApp)', 
                     line=dict(color='#2563EB', width=2, dash='dash'),
+                    text=df_line_chart['Virtual'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""),
+                    textposition='top center',
                     customdata=matrix_counts, hovertemplate=custom_hover
                 ))
                 
+                # Línea Telemarketer: Porcentajes abajo (bottom center) para evitar superposición visual
                 fig_tele.add_trace(go.Scatter(
                     x=df_line_chart['Mes_Nombre'], y=df_line_chart['Telemarketer'], 
-                    mode='lines+markers', name='Asesor Telemarketer (Telefónico)', 
+                    mode='lines+markers+text', name='Asesor Telemarketer (Telefónico)', 
                     line=dict(color='#10B981', width=2, dash='dot'),
+                    text=df_line_chart['Telemarketer'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""),
+                    textposition='bottom center',
                     customdata=matrix_counts, hovertemplate=custom_hover
                 ))
                 
