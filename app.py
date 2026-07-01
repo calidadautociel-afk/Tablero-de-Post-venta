@@ -673,7 +673,7 @@ with tab_quejas:
             st.info("Columnas de análisis de quejas no encontradas.")
 
 # ------------------------------------------------------------------------------
-# 6. PESTAÑA: TELEMARKETER (CON FILTROS INTERNOS DE AÑO Y MARCA AISLADOS)
+# 6. PESTAÑA: TELEMARKETER (SE INTEGRA EL OBJETIVO DEL 75% EN EL GRÁFICO LINEAL)
 # ------------------------------------------------------------------------------
 with tab_telemarketer:
     st.markdown("### 📞 Control y Efectividad de Canales (Telemarketing)")
@@ -700,7 +700,6 @@ with tab_telemarketer:
             anio_tele_sel = st.selectbox("Seleccione Año de Cierre:", options=anios_cierre_disponibles, key="sb_anio_tele")
             
         with col_f2:
-            # Detección de marcas disponibles en la columna 'Marca' de la base interna
             if 'Marca' in df_tele_base.columns:
                 marcas_tele_disponibles = sorted(df_tele_base['Marca'].dropna().unique())
             else:
@@ -765,7 +764,7 @@ with tab_telemarketer:
             custom_hover = "<b>%{x}</b><br>WhatsApp: %{customdata[0]}<br>Telefónico: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"
             matrix_counts = df_line_chart[['Cant_WA', 'Cant_Tel', 'Cant_Vac']].values
             
-            # Línea Global: modo text activado y % en vértice
+            # Línea Global: % en vértice
             fig_tele.add_trace(go.Scatter(
                 x=df_line_chart['Mes_Nombre'], y=df_line_chart['Global'], 
                 mode='lines+markers+text', name='Efectividad Global (Taller)', 
@@ -775,7 +774,7 @@ with tab_telemarketer:
                 customdata=matrix_counts, hovertemplate=custom_hover
             ))
             
-            # Línea Virtual: modo text activado y % en vértice
+            # Línea Virtual: % en vértice
             fig_tele.add_trace(go.Scatter(
                 x=df_line_chart['Mes_Nombre'], y=df_line_chart['Virtual'], 
                 mode='lines+markers+text', name='Asesor Virtual (WhatsApp)', 
@@ -785,7 +784,7 @@ with tab_telemarketer:
                 customdata=matrix_counts, hovertemplate=custom_hover
             ))
             
-            # Línea Telemarketer: modo text activado y % en vértice (abajo para evitar solapamiento)
+            # Línea Telemarketer: % en vértice (abajo para no encimarse)
             fig_tele.add_trace(go.Scatter(
                 x=df_line_chart['Mes_Nombre'], y=df_line_chart['Telemarketer'], 
                 mode='lines+markers+text', name='Asesor Telemarketer (Telefónico)', 
@@ -793,7 +792,17 @@ with tab_telemarketer:
                 text=df_line_chart['Telemarketer'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""),
                 textposition='bottom center',
                 customdata=matrix_counts, hovertemplate=custom_hover
-                ))
+            ))
+            
+            # NUEVA LÍNEA: Objetivo de efectividad al 75% (Referencia estática discontinua)
+            fig_tele.add_trace(go.Scatter(
+                x=[df_line_chart['Mes_Nombre'].iloc[0], df_line_chart['Mes_Nombre'].iloc[-1]], 
+                y=[75, 75], 
+                mode='lines', 
+                name='Objetivo (75%)', 
+                line=dict(color='#EF4444', width=2, dash='dash'), 
+                hoverinfo='skip'
+            ))
             
             fig_tele.update_layout(
                 yaxis=dict(title='Porcentaje (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'),
