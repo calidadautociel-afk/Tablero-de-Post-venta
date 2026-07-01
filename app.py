@@ -231,7 +231,7 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer = st.
 ])
 
 # ------------------------------------------------------------------------------
-# 1. MONITOR GLOBAL COMPARATIVO
+# 1. MONITOR GLOBAL COMPARATIVO (CORREGIDA LA ALINEACIÓN SIMÉTRICA)
 # ------------------------------------------------------------------------------
 with tab_monitor:
     st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(selected_months)}</div>", unsafe_allow_html=True)
@@ -261,7 +261,7 @@ with tab_monitor:
                 with sub_c6: st.button(f"😠 {d_q2}", key="btn_m_d2", on_click=set_filtro_marca, args=('Detractor',))
                 
             st.markdown("<br>", unsafe_allow_html=True)
-            subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont."])
+            subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
             with subtab_agendamiento:
                 c1, c2 = st.columns(2)
                 with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
@@ -289,7 +289,6 @@ with tab_monitor:
             with col_i1:
                 score_i1 = calcular_promedio(df_interna_filtrado, "Promedio")
                 st.plotly_chart(crear_velocimetro(score_i1, "SATISFACCIÓN (Promedio)", is_promedio=True), use_container_width=True)
-                st.markdown("<br><br><br>", unsafe_allow_html=True) 
                 
             with col_i2:
                 score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_interna_filtrado, "1-NPS")
@@ -300,7 +299,8 @@ with tab_monitor:
                 with sub_i6: st.button(f"😠 {d_i2}", key="btn_i_d2", on_click=set_filtro_int, args=('Detractor',))
                 
             st.markdown("<br>", unsafe_allow_html=True)
-            subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont."])
+            # ALINEACIÓN REPARADA: se eliminó el markdown "<br><br><br>" que empujaba las subpestañas hacia abajo de forma despareja
+            subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
             with subtab_agend_int:
                 st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
             with subtab_asesor_int:
@@ -404,7 +404,7 @@ with tab_tabla:
             
             for p_asesor in asesores:
                 df_ase = df_filtrado[df_filtrado[col_asesor_key] == p_asesor]
-                nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
+                nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recommendation - taller")
                 nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
                 nps_q8, _, _, _ = calcular_metricas_nps(df_ase, "Q8 - Competencia Asesor de Servicio")
                 nps_q10, _, _, _ = calcular_metricas_nps(df_ase, "Q10 - Explicación presupuesto")
@@ -609,7 +609,7 @@ with tab_carga:
     # === LADO DERECHO: INTERNA ===
     with col_carga_i:
         with st.container(border=True):
-            st.markdown("<h4 style='color:#10B981;'>🎯 Causa Raíz - Interna</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='text-align:center; color:#10B981;'>🎯 Causa Raíz - Interna</h4>", unsafe_allow_html=True)
             st.markdown("<p style='font-size: 14px; color: #64748B;'>Análisis basado en las verbalizaciones operativas. Ingresá una palabra clave para buscar fallas recurrentes.</p>", unsafe_allow_html=True)
             
             if "CONCATENADO" in df_interna_filtrado.columns:
@@ -673,7 +673,7 @@ with tab_quejas:
             st.info("Columnas de análisis de quejas no encontradas.")
 
 # ------------------------------------------------------------------------------
-# 6. PESTAÑA: TELEMARKETER (SE INTEGRA EL OBJETIVO DEL 75% EN EL GRÁFICO LINEAL)
+# 6. PESTAÑA: TELEMARKETER (CON FILTROS INTERNOS DE AÑO Y MARCA AISLADOS)
 # ------------------------------------------------------------------------------
 with tab_telemarketer:
     st.markdown("### 📞 Control y Efectividad de Canales (Telemarketing)")
