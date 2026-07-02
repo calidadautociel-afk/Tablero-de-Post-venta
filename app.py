@@ -748,7 +748,7 @@ with tab_telemarketer:
                 pct_global, pct_virtual, pct_human = None, None, None
                 
             if m_num in meses_con_datos:
-                line_data_tele append({
+                line_data_tele.append({
                     "Mes_Nombre": MESES_ES[m_num],
                     "Mes_Num": m_num,
                     "Global": pct_global,
