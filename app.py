@@ -326,16 +326,6 @@ with tab_monitor:
             with subtab_contacto_int:
                 st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
 
-    # --- CSS botones P/N/D Global ---
-    st.markdown("""
-        <style>
-        button[kind="secondary"] { background-color: transparent; }
-        div[data-testid="stVerticalBlock"] div:nth-child(1) > div > button { background-color: #D4EDDA; color: #155724; border-color: #C3E6CB;}
-        div[data-testid="stVerticalBlock"] div:nth-child(2) > div > button { background-color: #FFF3CD; color: #856404; border-color: #FFEEBA;}
-        div[data-testid="stVerticalBlock"] div:nth-child(3) > div > button { background-color: #F8D7DA; color: #721C24; border-color: #F5C6CB;}
-        </style>
-    """, unsafe_allow_html=True)
-
     # === TABLA GLOBAL DE COMENTARIOS DOBLE (RECUADROS) ===
     st.markdown("---")
     st.markdown("### 💬 Comentarios de Clientes")
@@ -582,7 +572,7 @@ with tab_carga:
                 motivos_data = []
                 for motivo in df_filtrado[col_q4].dropna().unique():
                     df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
-                    nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - Taller")
+                    nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - taller")
                     motivos_data.append({"Motivo": motivo, "Volumen": len(df_motivo), "NPS_Q2": nps_q2})
                     
                 if motifs_data := motivos_data:
@@ -682,7 +672,7 @@ with tab_quejas:
                     
                 st.dataframe(df_detractores[columnas_queja], use_container_width=True, hide_index=True)
             else:
-                st.success("🎉 ¡Excelente! No se registraron clientes detractores para los filtros seleccionados.")
+                st.success("🎉 ¡Excelente! No se registraron clientes detractors para los filtros seleccionados.")
         else:
             st.info("Columnas de análisis de quejas no encontradas.")
 
@@ -916,9 +906,10 @@ with tab_prima:
         
         # Procesamiento dinámico mes a mes
         for m_num in meses_columnas:
+            # Filtro base del mes actual para contar encuestas y drivers
             df_mes_marca_base = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
             
-            # Filtros de marca aplicados a las muestras
+            # Filtro por marcas para las métricas si están seleccionadas
             df_mes_marca_filtro = df_mes_marca_base.copy()
             df_anio_marca_filtro = df_marca_anio.copy()
             if marcas_prima_sel:
@@ -1058,7 +1049,7 @@ with tab_prima:
                 "Suma_D_M": suma_drivers_mes, "Pers": personas_declaradas, "Liq_S_M": total_liq_sector_mes
             })
 
-        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% ---
+        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% COMPLETA CON CANDADO DE NOTA REAL ---
         lista_render_completa = []
         montos_grafico_alcanzado = []
         montos_grafico_maximo = []
@@ -1070,23 +1061,37 @@ with tab_prima:
             monto_bonus_trimestral = 0
             aplica_fila_bonus = False
             
-            # Monitorear cierres trimestrales naturales (Marzo=3, Junio=6)
             if m in [3, 6]:
                 aplica_fila_bonus = True
                 indices_trimestre = [m-2, m-1, m]
                 
-                # Para cobrar el 5%, el acumulado de cada driver debe superar los pisos mínimos
-                # Evaluamos si en los meses cargados del trimestre hubo liquidación base efectiva
-                tuvo_actividad_trim = any(monto_puro_liquidado.get(idx, 0) > 0 for idx in indices_trimestre)
+                # Filtrar base de encuestas agrupadas del trimestre
+                df_trim_encuestas = df_marca_anio[df_marca_anio['Mes_Num'].isin(indices_trimestre)]
+                if marcas_prima_sel and 'Marca' in df_trim_encuestas.columns:
+                    df_trim_encuestas = df_trim_encuestas[df_trim_encuestas['Marca'].isin(marcas_prima_sel)]
                 
-                if tuvo_actividad_trim:
-                    suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
-                    monto_bonus_trimestral = round(suma_primas_puras_trim * 0.05, 0)
-            
+                if len(df_trim_encuestas) > 0:
+                    # Calcular el NPS consolidado real del trimestre para los 4 indicadores
+                    nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
+                    nps_trim_q12, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q12 - Calidad del trabajo")
+                    nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
+                    nps_trim_q19, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q19 - Satisfacción con el Contacto")
+                    
+                    # Definir los umbrales mínimos requeridos según el periodo vigente
+                    p_min_q2 = 88.3
+                    p_min_q12 = 87.8
+                    p_min_q7 = 91.8
+                    p_min_q19 = 91.8
+                    
+                    # Candado Trimestral: Los 4 deben superar el piso en la nota acumulada
+                    if (nps_trim_q2 >= p_min_q2 and nps_trim_q12 >= p_min_q12 and 
+                        nps_trim_q7 >= p_min_q7 and nps_trim_q19 >= p_min_q19):
+                        suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
+                        monto_bonus_trimestral = round(suma_primas_puras_trim * 0.05, 0)
+
             final_recalculado_mes = d["Liq_S_M"] + monto_bonus_trimestral
             perdida_mes = max_teorico_acumulado[m] - final_recalculado_mes
             
-            # Guardar vectores limpios para Plotly
             if d["L1_Val"] != "-":
                 montos_grafico_alcanzado.append(final_recalculado_mes)
                 montos_grafico_maximo.append(max_teorico_acumulado[m])
@@ -1112,7 +1117,6 @@ with tab_prima:
                 html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
             html_tabla += "</tr></thead><tbody>"
             
-            # SECCIÓN: LLAVES
             html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
             
             html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>📞 Contacto Posterior 6MM (Meta &ge; 77%)</td>"
@@ -1143,7 +1147,6 @@ with tab_prima:
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L4_Val']}</td>"
             html_tabla += "</tr>"
             
-            # SECCIÓN: DRIVERS
             html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
             
             html_tabla += "<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>🔹 Recomendación (Q2)</td>"
@@ -1162,7 +1165,6 @@ with tab_prima:
             for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_Q19_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            # SECCIÓN FINANCIALS
             html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
             html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
             for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
@@ -1172,20 +1174,17 @@ with tab_prima:
             for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>{d['Pers']}</td>"
             html_tabla += "</tr>"
             
-            html_tabla += "<tr style='background-color: #ffffff;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
             for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            # NUEVA FILA: BONUS TRIMESTRAL 5%
-            html_tabla += "<tr style='color: #047857; background-color: #f0fdf4;'>"
+            html_tabla += "<tr style='color: #047857; background-color: #f0fdf4;'> layout_width: full;"
             html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral Adicional (5%)</td>"
             for d in lista_render_completa:
                 str_b = f"${d['Bonus_5']:,.0f}" if d["Bonus_5"] > 0 else ("-" if d["Aplica_B"] else "-")
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold;'>{str_b}</td>"
             html_tabla += "</tr>"
             
-            # NUEVA FILA: LIQUIDACIÓN FINAL RECALCULADA
             html_tabla += "<tr style='background-color: #D1FAE5; border-top: 2px solid #10B981;'>"
             html_tabla += "<td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; font-size: 14px;'>💵 LIQUIDACIÓN FINAL CON BONUS</td>"
             for d in lista_render_completa: html_tabla += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857; font-size: 14px;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
