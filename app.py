@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import math
+import datetime
 
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
@@ -45,7 +46,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# URLs públicas de Google Sheets (Bases de datos + Hoja de Tasa de Emails Corregida)
+# URLs públicas de Google Sheets (Bases de datos + Hoja de Tasa de Emails)
 SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
 SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
@@ -741,7 +742,7 @@ with tab_telemarketer:
                 den_human = c_telefonico + c_vacios
                 pct_human = round((c_telefonico / den_human * 100), 1) if den_human > 0 else None
                 
-                # 3. EFECTIVIDAD GLOBAL DEL TALLER: (Whatsapp + Telefonico) / Total Intentos Globales
+                # 3. EFECTIVIDAD GLOBAL DEL TALLER: (WhatsApp + Telefonico) / Total Intentos Globales
                 pct_global = round(((c_whatsapp + c_telefonico) / total_intentos_global * 100), 1) if total_intentos_global > 0 else None
             else:
                 c_whatsapp, c_telefonico, c_vacios = 0, 0, 0
@@ -870,7 +871,7 @@ with tab_telemarketer:
 # ------------------------------------------------------------------------------
 with tab_prima:
     st.markdown("### 📊 Tablero de Auditoría y Liquidación: Prima de Calidad Postventa")
-    st.markdown("Esta sección evalúa el cumplimiento de las llaves obligatorias y los incentivos por drivers, incorporando el Bonus Trimestral del 5% y las escalas actualizadas de forma dinámica por año y mes.")
+    st.markdown("Esta sección evalúa el cumplimiento de las llaves obligatorias y los incentivos por drivers, incorporando la previsión predictiva de closures trimestrales.")
     
     # Selector de Año exclusivo interno
     anios_disponibles_prima = sorted(df_marca_raw['Año'].unique(), reverse=True)
@@ -905,6 +906,7 @@ with tab_prima:
         # Diccionarios internos para control acumulado de tramos de cara al Bonus del 5%
         monto_puro_liquidado = {}
         max_teorico_acumulado = {}
+        final_recalculado_acumulado = {}
         
         # Procesamiento dinámico mes a mes
         for m_num in meses_columnas:
@@ -959,7 +961,7 @@ with tab_prima:
             score_nps_mes, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")
             ok_llave2 = (score_nps_mes >= meta_llave2_umbral)
             
-            # --- LLAVE 3: TASA DE MAIL VÁLIDO ---
+            # --- --- LLAVE 3: TASA DE MAIL VÁLIDO ---
             pct_mail_val = 0.0
             ok_llave3 = False
             val_l3_display = "-"
@@ -1003,15 +1005,19 @@ with tab_prima:
             if es_escala_2025_post_mayo:
                 if score_nps_mes >= 93.5: monto_d1 = 210000
                 elif score_nps_mes >= 89.8: monto_d1 = 160000
+                
                 score_q11, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")
                 if score_q11 >= 94.0: monto_d2 = 105000
                 elif score_q11 >= 89.3: monto_d2 = 80000
+                
                 score_q8, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q8 - Competencia Asesor de Servicio")
                 if score_q8 >= 95.5: monto_d3 = 52500
                 elif score_q8 >= 93.3: monto_d3 = 40000
+                
                 score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
                 if score_q7 >= 95.5: monto_d4 = 52500
                 elif score_q7 >= 93.3: monto_d4 = 40000
+                
                 max_teorico_unitario = 420000
                 labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amab. Asesor"]
             else:
@@ -1061,7 +1067,7 @@ with tab_prima:
                 "Labels": labels_drivers
             })
 
-        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% CON CANDADO CONSOLIDADO CORREGIDO ---
+        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% CON CANDADO CONSOLIDADO COMPLETO ---
         lista_render_completa = []
         montos_grafico_alcanzado = []
         montos_grafico_maximo = []
@@ -1075,35 +1081,30 @@ with tab_prima:
             color_bonus_html = "color:#64748B;"
             aplica_fila_bonus = (m in [3, 6, 9, 12])
             
-            # Definir índices del trimestre actual
+            # Definir índices del trimestre natural correspondiente
             indices_trimestre = [m - (m-1)%3 + i for i in range(3)]
-            
-            # Obtener datos de encuestas agrupadas del trimestre acumulado a la fecha (Predictivo)
             meses_acumulados_hasta_ahora = [idx for idx in indices_trimestre if idx <= m]
+            
             df_trim_encuestas = df_marca_anio[df_marca_anio['Mes_Num'].isin(meses_acumulados_hasta_ahora)]
             if marcas_prima_sel and 'Marca' in df_trim_encuestas.columns:
                 df_trim_encuestas = df_trim_encuestas[df_trim_encuestas['Marca'].isin(marcas_prima_sel)]
                 
             if len(df_trim_encuestas) > 0:
-                # Calcular notas reales consolidadas del bloque para validación del candado
                 nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
                 
                 if d["Es_2025"]:
                     nps_trim_q11, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q11 - Explicación trabajo - costo")
                     nps_trim_q8, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q8 - Competencia Asesor de Servicio")
                     nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
-                    
                     cumple_acum_parcial = (nps_trim_q2 >= 89.8 and nps_trim_q11 >= 89.3 and nps_trim_q8 >= 93.3 and nps_trim_q7 >= 93.3)
                     indicador_falla = "Q2" if nps_trim_q2 < 89.8 else ("Q11" if nps_trim_q11 < 89.3 else ("Q8" if nps_trim_q8 < 93.3 else "Q7"))
                 else:
                     nps_trim_q12, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q12 - Calidad del trabajo")
                     nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
                     nps_trim_q19, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q19 - Satisfacción con el Contacto")
-                    
                     cumple_acum_parcial = (nps_trim_q2 >= 88.3 and nps_trim_q12 >= 87.8 and nps_trim_q7 >= 91.8 and nps_trim_q19 >= 91.8)
                     indicador_falla = "Q2" if nps_trim_q2 < 88.3 else ("Q12" if nps_trim_q12 < 87.8 else ("Q7" if nps_trim_q7 < 91.8 else "Q19"))
                 
-                # Renderizar estado predictivo intermedio o liquidación económica en mes de cierre
                 if cumple_acum_parcial:
                     if aplica_fila_bonus:
                         suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
@@ -1136,181 +1137,212 @@ with tab_prima:
                 "Pct_Cumpl": pct_cumplimiento, "Final_M": final_recalculado_mes
             })
 
-        # --- GENERACIÓN DE LA MATRIZ DINÁMICA EN HTML ---
-        if lista_render_completa:
-            html_tabla = """
-            <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
-                <thead>
-                    <tr style='background-color: #1E293B; color: white;'>
-                        <th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-size: 14px;'>Estructura de Control y Prima Anual</th>
-            """
-            for d in lista_render_completa:
-                html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
-            html_tabla += "</tr></thead><tbody>"
+        # Renderizado de la tabla HTML
+        html_tabla = """
+        <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
+            <thead>
+                <tr style='background-color: #1E293B; color: white;'>
+                    <th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-size: 14px;'>Estructura de Control y Prima Anual</th>
+        """
+        for d in lista_render_completa:
+            html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
+        html_tabla += "</tr></thead><tbody>"
+        
+        html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
+        
+        lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
+        html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
+        for d in lista_render_completa:
+            bg = "#D4EDDA; color: #155724;" if d["L1_OK"] else "#F8D7DA; color: #721C24;"
+            if d["L1_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L1_Val']}</td>"
+        html_tabla += "</tr>"
+        
+        lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
+        html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
+        for d in lista_render_completa:
+            bg = "#D4EDDA; color: #155724;" if d["L2_OK"] else "#F8D7DA; color: #721C24;"
+            if d["L2_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L2_Val']}</td>"
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa de Mail Válido (Meta &ge; 80%)</td>"
+        for d in lista_render_completa:
+            bg = "#D4EDDA; color: #155724;" if d["L3_OK"] else "#F8D7DA; color: #721C24;"
+            if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
+        html_tabla += "</tr>"
             
-            html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
-            
-            lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
+        lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
+        html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
+        for d in lista_render_completa:
+            bg = "#D4EDDA; color: #155724;" if d["L5_OK"] else "#F8D7DA; color: #721C24;"
+            if d["L5_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
+        
+        for row_idx in range(4):
+            html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][row_idx]}</td>"
             for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L1_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L1_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L1_Val']}</td>"
+                m_val = d["V_D1"] if row_idx==0 else (d["V_D2"] if row_idx==1 else (d["V_D3"] if row_idx==2 else d["V_D4"]))
+                html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${m_val:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
-            
-            lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L2_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L2_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L2_Val']}</td>"
-            html_tabla += "</tr>"
-            
-            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa de Mail Válido (Meta &ge; 80%)</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L3_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
-            html_tabla += "</tr>"
+        
+        html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
+        html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
+        for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr style='background-color: #F1F5F9; font-weight: bold;'> "
+        html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; color:#475569;'>📊 Eficiencia Comercial del Mes</td>"
+        for d in lista_render_completa:
+            color_pct = "#10B981" if d["Pct_Cumpl"] >= 90 else ("#F59E0B" if d["Pct_Cumpl"] >= 50 else "#EF4444")
+            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{color_pct};'>{d['Pct_Cumpl']:.1f}%</td>"
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>👥 Personal Declarado</td>"
+        for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>{d['Pers']}</td>"
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
+        for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'> "
+        html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral (5%) [Predictivo]</td>"
+        for d in lista_render_completa:
+            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
+        html_tabla += "</tr>"
+        
+        html_tabla += "<tr style='background-color: #D1FAE5; border-top: 2px solid #10B981;'>"
+        html_tabla += "<td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; font-size: 14px;'>💵 LIQUIDACIÓN FINAL CON BONUS</td>"
+        for d in lista_render_completa: html_tabla += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857; font-size: 14px;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
+        html_tabla += "</tr>"
+        
+        html_tabla += "</tbody></table>"
+        st.markdown(html_tabla, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.info("💡 **Regla de Cierre:** El Bonus del 5% trimestral consolidado se calcula de forma automatizada e impacta en las columnas de cierre de ciclo (Marzo y Junio). En los meses previos figura su proyección en base al acumulado parcial.")
+        
+        # ==============================================================================
+        # SECCIÓN FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES (AJUSTADO)
+        # ==============================================================================
+        st.markdown("---")
+        st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
+        st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje de las transferencias de la marca, utiliza estos selectores para auditar los cobros reales.</p>", unsafe_allow_html=True)
+        
+        # Cálculo Automático a 45 días del mes cobrado por defecto
+        fecha_actual = datetime.date.today()
+        fecha_cobro = fecha_actual - datetime.timedelta(days=45)
+        mes_default_nombre = MESES_ES.get(fecha_cobro.month, "Enero")
+        
+        opciones_meses = list(MESES_ES.values())
+        default_val = [mes_default_nombre] if mes_default_nombre in opciones_meses else []
+        
+        col_sel_c1, col_sel_c2 = st.columns(2)
+        with col_sel_c1:
+            anio_caja_sel = st.selectbox("Año de Gestión (Flujo Caja):", options=anios_disponibles_prima, key="sb_anio_caja")
+        with col_sel_c2:
+            meses_caja_sel = st.multiselect("Meses cobrados:", options=opciones_meses, default=default_val, key="ms_meses_caja")
+        
+        monto_cobrado_efectivo = 0.0
+        monto_pendiente_prevision = 0.0
+        monto_perdido_acumulado = 0.0
+        
+        montos_grafico_alcanzado = []
+        montos_grafico_maximo = []
+        montos_grafico_perdida = []
+        meses_grafico_nombres = []
+        
+        for d in lista_render_completa:
+            if d["L1_Val"] != "-": 
+                final_mes = d["Final_M"]
+                max_teorico = max_teorico_acumulado.get(d["Mes_Num"], 0)
                 
-            lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L5_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L5_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
-            html_tabla += "</tr>"
-            
-            html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
-            
-            for row_idx in range(4):
-                html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][row_idx]}</td>"
-                for d in lista_render_completa:
-                    m_val = d["V_D1"] if row_idx==0 else (d["V_D2"] if row_idx==1 else (d["V_D3"] if row_idx==2 else d["V_D4"]))
-                    html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${m_val:,.0f}</td>".replace("$0", "$0")
-                html_tabla += "</tr>"
-            
-            html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
-            html_tabla += "</tr>"
-            
-            # FILA NUEVA: PORCENTAJE DE CUMPLIMIENTO INTERMEDIO DEL MES
-            html_tabla += "<tr style='background-color: #F1F5F9; font-weight: bold;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; color:#475569;'>📊 Eficiencia Comercial del Mes</td>"
-            for d in lista_render_completa:
-                color_pct = "#10B981" if d["Pct_Cumpl"] >= 90 else ("#F59E0B" if d["Pct_Cumpl"] >= 50 else "#EF4444")
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{color_pct};'>{d['Pct_Cumpl']:.1f}%</td>"
-            html_tabla += "</tr>"
-            
-            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>👥 Personal Declarado</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>{d['Pers']}</td>"
-            html_tabla += "</tr>"
-            
-            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
-            html_tabla += "</tr>"
-            
-            # FILA NUEVA: CONTROL DE REAJUSTE PREDICTIVO CONTINUO (ALERTAS TEMPRANAS)
-            html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral (5%) [Predictivo]</td>"
-            for d in lista_render_completa:
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
-            html_tabla += "</tr>"
-            
-            html_tabla += "<tr style='background-color: #D1FAE5; border-top: 2px solid #10B981;'>"
-            html_tabla += "<td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; font-size: 14px;'>💵 LIQUIDACIÓN FINAL CON BONUS</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857; font-size: 14px;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
-            html_tabla += "</tr>"
-            
-            html_tabla += "</tbody></table>"
-            st.markdown(html_tabla, unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.info("💡 **Regla de Cierre:** El Bonus del 5% trimestral consolidado se calcula de forma automatizada e impacta en las columnas de cierre de ciclo (Marzo y Junio). En los meses previos figura su proyección en base al acumulado parcial.")
-            
-            # ==============================================================================
-            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES (DESFASE DE PAGOS)
-            # ==============================================================================
-            st.markdown("---")
-            st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
-            st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje de las transferencias de la marca, utiliza estos selectores para auditar los cobros reales.</p>", unsafe_allow_html=True)
-            
-            col_sel_c1, col_sel_c2 = st.columns(2)
-            with col_sel_c1:
-                anio_caja_sel = st.selectbox("Año de Gestión (Flujo Caja):", options=anios_disponibles_prima, key="sb_anio_caja")
-            with col_sel_c2:
-                meses_caja_sel = st.multiselect("Meses Solicitados / Auditados:", options=list(MESES_ES.values()), default=list(MESES_ES.values())[:3], key="ms_meses_caja")
-                
-            monto_cobrado_efectivo = 0.0
-            monto_pendiente_prevision = 0.0
-            
-            # Simular o mapear los valores de desfasaje para las tarjetas KPI
-            for d in lista_render_completa:
+                # Asignación correcta de flujo de caja según los meses marcados como cobrados
                 if d["Mes_Nombre"] in meses_caja_sel:
-                    # Supongamos los meses 1 al 4 como ya cobrados (conciliados), y el actual/anterior como pendientes
-                    if d["Mes_Num"] <= 4:
-                        monto_cobrado_efectivo += d["Final_M"]
-                    else:
-                        monto_pendiente_prevision += d["Final_M"]
-            
-            col_c_1, col_c_2 = st.columns(2)
-            with col_c_1:
-                st.markdown(f"""
-                    <div class='kpi-card' style='border-left: 5px solid #10B981;'>
-                        <div class='kpi-label'>💰 MONTO ACUMULADO COBRADO (CONCILIADO)</div>
-                        <div class='kpi-value' style='color:#065F46;'>${monto_cobrado_efectivo:,.0f}</div>
-                        <div class='kpi-sub' style='color:#10B981;'>✓ Transferencias Confirmadas de Marca</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            with col_c_2:
-                st.markdown(f"""
-                    <div class='kpi-card' style='border-left: 5px solid #3B82F6;'>
-                        <div class='kpi-label'>⏳ PREVISIÓN PENDIENTE DE RECEPCIÓN</div>
-                        <div class='kpi-value' style='color:#1D4ED8;'>${monto_pendiente_prevision:,.0f}</div>
-                        <div class='kpi-sub' style='color:#3B82F6;'>ℹ Incluye Estimación de Mes en Curso</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO DE ÁREAS (PLOTLY) ---
-            if meses_grafico_nombres:
-                st.markdown("<br>", unsafe_allow_html=True)
-                fig_econ = go.Figure()
-                fig_econ.add_trace(go.Scatter(
-                    x=meses_grafico_nombres, y=montos_grafico_maximo,
-                    mode='lines', name='Monto Máximo Posible',
-                    line=dict(color='#94A3B8', width=2, dash='dash'),
-                    hoverinfo='skip'
-                ))
-                fig_econ.add_trace(go.Scatter(
-                    x=meses_grafico_nombres, y=montos_grafico_alcanzado,
-                    mode='lines+markers+text', name='Dinero Real Cobrado',
-                    line=dict(color='#10B981', width=4),
-                    marker=dict(size=8, color='#10B981'),
-                    text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
-                    textposition='top center',
-                    fill='tozeroy',
-                    fillcolor='rgba(16, 185, 129, 0.12)',
-                    hovertemplate='<b>%{x}</b><br>Cobrado: %{y:$,.0f}<extra></extra>'
-                ))
-                fig_econ.add_trace(go.Scatter(
-                    x=meses_grafico_nombres, y=montos_grafico_perdida,
-                    mode='lines+markers', name='Dinero No Cobrado (Pérdida)',
-                    line=dict(color='#EF4444', width=2),
-                    marker=dict(size=6, color='#EF4444'),
-                    fill='tonexty',
-                    fillcolor='rgba(239, 68, 68, 0.06)',
-                    hovertemplate='<b>%{x}</b><br>Pérdida: %{y:$,.0f}<extra></extra>'
-                ))
-                fig_econ.update_layout(
-                    hovermode='x unified',
-                    yaxis=dict(title='Monto en Pesos ($)', showgrid=True, gridcolor='#E2E8F0'),
-                    xaxis=dict(showgrid=False),
-                    margin=dict(l=40, r=40, t=20, b=40),
-                    height=420,
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                st.plotly_chart(fig_econ, use_container_width=True)
+                    monto_cobrado_efectivo += final_mes
+                    monto_perdido_acumulado += max(0, max_teorico - final_mes)
+                else:
+                    monto_pendiente_prevision += final_mes
+                    
+                montos_grafico_alcanzado.append(final_mes)
+                montos_grafico_maximo.append(max_teorico)
+                montos_grafico_perdida.append(max(0, max_teorico - final_mes))
+                meses_grafico_nombres.append(d["Mes_Nombre"])
+        
+        str_cobrado = f"${monto_cobrado_efectivo:,.0f}".replace(",", ".")
+        str_pendiente = f"${monto_pendiente_prevision:,.0f}".replace(",", ".")
+        str_perdido = f"${monto_perdido_acumulado:,.0f}".replace(",", ".")
+        
+        col_c_1, col_c_2, col_c_3 = st.columns(3)
+        with col_c_1:
+            st.markdown(f"""
+                <div class='kpi-card' style='border-left: 5px solid #10B981;'>
+                    <div class='kpi-label'>💰 MONTO COBRADO</div>
+                    <div class='kpi-value' style='color:#065F46;'>{str_cobrado}</div>
+                    <div class='kpi-sub' style='color:#10B981;'>✓ En meses seleccionados</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_c_2:
+            st.markdown(f"""
+                <div class='kpi-card' style='border-left: 5px solid #3B82F6;'>
+                    <div class='kpi-label'>⏳ PREVISIÓN PENDIENTE</div>
+                    <div class='kpi-value' style='color:#1D4ED8;'>{str_pendiente}</div>
+                    <div class='kpi-sub' style='color:#3B82F6;'>ℹ Meses con datos sin cobrar</div>
+                </div>
+            """, unsafe_allow_html=True)
+        with col_c_3:
+            st.markdown(f"""
+                <div class='kpi-card' style='border-left: 5px solid #EF4444;'>
+                    <div class='kpi-label'>📉 MONTO PERDIDO (NO ALCANZADO)</div>
+                    <div class='kpi-value' style='color:#B91C1C;'>{str_perdido}</div>
+                    <div class='kpi-sub' style='color:#EF4444;'>⚠ En los meses seleccionados</div>
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO DE ÁREAS (PLOTLY) ---
+        if meses_grafico_nombres:
+            st.markdown("<br>", unsafe_allow_html=True)
+            fig_econ = go.Figure()
+            fig_econ.add_trace(go.Scatter(
+                x=meses_grafico_nombres, y=montos_grafico_maximo,
+                mode='lines', name='Monto Máximo Posible',
+                line=dict(color='#94A3B8', width=2, dash='dash'),
+                hoverinfo='skip'
+            ))
+            fig_econ.add_trace(go.Scatter(
+                x=meses_grafico_nombres, y=montos_grafico_alcanzado,
+                mode='lines+markers+text', name='Dinero Real Cobrado',
+                line=dict(color='#10B981', width=4),
+                marker=dict(size=8, color='#10B981'),
+                text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
+                textposition='top center',
+                fill='tozeroy',
+                fillcolor='rgba(16, 185, 129, 0.12)',
+                hovertemplate='<b>%{x}</b><br>Cobrado: %{y:$,.0f}<extra></extra>'
+            ))
+            fig_econ.add_trace(go.Scatter(
+                x=meses_grafico_nombres, y=montos_grafico_perdida,
+                mode='lines+markers', name='Dinero No Cobrado (Pérdida)',
+                line=dict(color='#EF4444', width=2),
+                marker=dict(size=6, color='#EF4444'),
+                fill='tonexty',
+                fillcolor='rgba(239, 68, 68, 0.06)',
+                hovertemplate='<b>%{x}</b><br>Pérdida: %{y:$,.0f}<extra></extra>'
+            ))
+            fig_econ.update_layout(
+                hovermode='x unified',
+                yaxis=dict(title='Monto en Pesos ($)', showgrid=True, gridcolor='#E2E8F0'),
+                xaxis=dict(showgrid=False),
+                margin=dict(l=40, r=40, t=20, b=40),
+                height=420,
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_econ, use_container_width=True)
     else:
         st.info("No se localizó un historial anual para estructurar la matriz de llaves.")
