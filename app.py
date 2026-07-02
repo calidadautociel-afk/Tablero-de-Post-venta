@@ -126,7 +126,7 @@ def calcular_metricas_nps(df, columna):
     nps_score = pct_promotores - pct_detractores
     nps_score = max(0.0, round(nps_score, 1))
     
-    return nps_score, promotores, neutros, detractors
+    return nps_score, promotores, neutros, detractores
 
 def calcular_promedio(df, columna):
     if columna not in df.columns:
@@ -539,7 +539,7 @@ with tab_ficha:
                 chart_data.append({
                     "Periodo": f"{mes_nombre} {año}",
                     "Orden": año * 100 + mes_num, 
-                    "NPS_Marca": hist_data_m.get((año, mes_num), None),
+                    "NPS_Marca": Math.get((año, mes_num), None) if 'Math' in globals() else hist_data_m.get((año, mes_num), None),
                     "NPS_Interna": hist_data_i.get((año, mes_num), None),
                     "NPS_Global": global_nps.get((año, mes_num), None)
                 })
@@ -871,11 +871,11 @@ with tab_telemarketer:
         st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Telemarketer.")
 
 # ------------------------------------------------------------------------------
-# 7. PESTAÑA: PRIMA DE CALIDAD (AUDITORÍA ANUAL GLOBAL DE POSTVENTA)
+# 7. PESTAÑA: PRIMA DE CALIDAD (AUDITORÍA ANUAL GLOBAL DE POSTVENTA CORREGIDA)
 # ------------------------------------------------------------------------------
 with tab_prima:
     st.markdown("### 📊 Tablero de Auditoría de Llaves: Prima de Calidad Postventa")
-    st.markdown("Esta sección evalúa de forma dinámica el cumplimiento de los **Thresholds Mínimos** requeridos a nivel sectorial para habilitar las liquidaciones de incentivos.")
+    st.markdown("Esta sección evalúa de forma dinámica el cumplimiento de los **Thresholds Mínimos** requeridos a nivel sectorial para habilitar las liquidaciones de incentivos del taller.")
     
     # Selector de Año exclusivo interno
     anios_disponibles_prima = sorted(df_marca_raw['Año'].unique(), reverse=True)
@@ -915,7 +915,7 @@ with tab_prima:
             # ==============================================================================
             # LLAVE 1: CONTACTO POSTERIOR 6MM (Meta >= 77% - Ventana Móvil Corregida de 6 Meses)
             # ==============================================================================
-            # Filtramos la base del año actual para la ventana móvil (mes actual y 5 anteriores)
+            # Filtramos la base completa del año actual para la ventana móvil (mes actual y 5 anteriores)
             df_6mm_marca = df_marca_anio[(df_marca_anio['Mes_Num'] > (m_num - 6)) & (df_marca_anio['Mes_Num'] <= m_num)]
             
             tasa_6mm = 0.0
@@ -925,7 +925,7 @@ with tab_prima:
             if "Q18 - Contactado" in df_6mm_marca.columns:
                 serie_q18 = df_6mm_marca["Q18 - Contactado"].astype(str).str.strip()
                 
-                # Contamos exclusivamente los "Sí" y "No" reales, dejando fuera los vacíos
+                # Contamos exclusivamente los "Sí" y "No" reales, dejando fuera los vacíos/nulos por completo
                 cant_si = len(serie_q18[serie_q18.str.lower() == 'sí']) + len(serie_q18[serie_q18.str.lower() == 'si'])
                 cant_no = len(serie_q18[serie_q18.str.lower() == 'no'])
                 total_validos_6mm = cant_si + cant_no
@@ -955,7 +955,7 @@ with tab_prima:
                 col_marca_ext = next((c for c in df_email_llave_raw.columns if c.lower() == 'marca'), None)
                 
                 if col_tasa_mail and col_mes_ext:
-                    # Filtrar por correspondencia del mes actual
+                    # Filtrar por correspondencia del mes actual y año actual
                     df_row_mail = df_email_llave_raw[df_email_llave_raw[col_mes_ext].astype(str).str.strip().str.lower() == nombre_mes_buscar.lower()]
                     
                     # Si hay marcas seleccionadas en el widget interno, cruzamos por marcas correspondientes
