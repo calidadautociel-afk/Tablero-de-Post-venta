@@ -48,7 +48,7 @@ st.markdown("""
 # URLs públicas de Google Sheets (Bases de datos + Hoja de Tasa de Emails)
 SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
-SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4woWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
+SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
 
 # Mapeo de meses en español
 MESES_ES = {
@@ -547,7 +547,7 @@ with tab_ficha:
                 fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Marca'], mode='lines+markers+text', name=f'NPS Marca', line=dict(color='#1E293B', width=3), marker=dict(size=10, color='#1E293B'), text=df_grafico['NPS_Marca'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center', hovertemplate='<b>%{x}</b><br>Marca: %{y}%<extra></extra>'))
                 fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Interna'], mode='lines+markers+text', name=f'NPS Interno', line=dict(color='#10B981', width=3), marker=dict(size=10, color='#10B981'), text=df_grafico['NPS_Interna'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='bottom center', hovertemplate='<b>%{x}</b><br>Interno: %{y}%<extra></extra>'))
                 fig_line.add_trace(go.Scatter(x=[df_grafico['Periodo'].iloc[0], df_grafico['Periodo'].iloc[-1]], y=[94, 94], mode='lines', name='Objetivo (94%)', line=dict(color='#22C55E', width=2, dash='dash'), hoverinfo='skip'))
-                fig_line.update_layout(title={'text': "Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", 'font': {'size': 16, 'color': '#1E293B'}}, yaxis=dict(title='NPS (%)', showgrid=True, gridcolor='#E2E8F0'), xaxis=dict(showgrid=False), margin=dict(l=40, r=40, t=60, b=40), height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_line.update_layout(title={'text': "Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", 'font': {'size': 16, 'color': '#1E293B'}}, yaxis=dict(title='NPS (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'), xaxis=dict(showgrid=False), margin=dict(l=40, r=40, t=60, b=40), height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_line, use_container_width=True)
             else:
                 st.info("No hay suficientes datos históricos para generar el gráfico.")
@@ -672,7 +672,7 @@ with tab_quejas:
                     
                 st.dataframe(df_detractores[columnas_queja], use_container_width=True, hide_index=True)
             else:
-                st.success("🎉 ¡Excelente! No se registraron clientes detractores para los filtros seleccionados.")
+                st.success("🎉 ¡Excelente! No se registraron clientes detractors para los filtros seleccionados.")
         else:
             st.info("Columnas de análisis de quejas no encontradas.")
 
@@ -871,15 +871,12 @@ with tab_telemarketer:
 # ------------------------------------------------------------------------------
 with tab_prima:
     st.markdown("### 📊 Tablero de Auditoría y Liquidación: Prima de Calidad Postventa")
-    st.markdown("Esta sección evalúa el cumplimiento de las llaves obligatorias y los incentivos por drivers, incorporando el Bonus Trimestral del 5% y las escalas configuradas de forma histórica según el año y mes seleccionado.")
+    st.markdown("Esta sección evalúa el cumplimiento de las llaves obligatorias y los incentivos por drivers, incorporando el Bonus Trimestral del 5% y las escalas actualizadas a partir de Abril.")
     
     # Selector de Año exclusivo interno
     anios_disponibles_prima = sorted(df_marca_raw['Año'].unique(), reverse=True)
     if anios_disponibles_prima:
         anio_prima_sel = st.selectbox("Seleccione Año para Evaluar la Prima:", options=anios_disponibles_prima, key="sb_anio_prima")
-        
-        # Declaración global de la variable para corregir el NameError de visualización
-        es_filtro_2025 = (anio_prima_sel == 2025)
         
         # Filtro de Marcas específico para acotar la auditoría de la prima
         marcas_prima_disponibles = sorted(df_marca_raw['Marca'].dropna().unique()) if 'Marca' in df_marca_raw.columns else ["PEUGEOT", "CITROEN"]
@@ -909,9 +906,10 @@ with tab_prima:
         
         # Procesamiento dinámico mes a mes
         for m_num in meses_columnas:
+            # Filtro base del mes actual para contar encuestas y drivers
             df_mes_marca_base = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
             
-            # Filtros de marca aplicados a las muestras
+            # Filtro por marcas para las métricas si están seleccionadas
             df_mes_marca_filtro = df_mes_marca_base.copy()
             df_anio_marca_filtro = df_marca_anio.copy()
             if marcas_prima_sel:
@@ -920,28 +918,16 @@ with tab_prima:
                 if 'Marca' in df_anio_marca_filtro.columns:
                     df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
             
-            # Parámetros cruzados de cortes de escala temporales históricos
-            es_escala_2025_post_mayo = (anio_prima_sel == 2025 and m_num >= 5)
-            es_escala_2026_post_abril = (anio_prima_sel == 2026 and m_num >= 4)
-            
-            # Asignación dinámica de umbrales para las llaves de acceso (Se eliminó la Tasa de Respuesta)
-            meta_llave1_umbral = 80.5 if es_escala_2025_post_mayo else 77.0
-            meta_llave2_umbral = 88.0 if es_escala_2025_post_mayo else 86.3
-            meta_llave3_umbral = 80.0
-            meta_llave5_umbral = 8 if es_escala_2025_post_mayo else 10
+            # Condicional de corte de escala temporal (A partir de abril cambian los montos)
+            es_escala_nueva = (m_num >= 4)
             
             if len(df_mes_marca_base) == 0:
                 monto_puro_liquidado[m_num] = 0
-                if es_escala_2026_post_abril: max_teorico_mes = 630000
-                elif es_escala_2025_post_mayo: max_teorico_mes = 420000
-                else: max_teorico_mes = 540000
-                max_teorico_acumulado[m_num] = max_teorico_mes * personas_declaradas
-                
+                max_teorico_acumulado[m_num] = (630000 * personas_declaradas) if es_escala_nueva else (540000 * personas_declaradas)
                 line_data_prima.append({
                     "Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False,
-                    "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False,
-                    "V_D1": 0, "V_D2": 0, "V_D3": 0, "V_D4": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0,
-                    "Es_2025": es_escala_2025_post_mayo, "Labels": ["🔹 Driver 1", "🔹 Driver 2", "🔹 Driver 3", "🔹 Driver 4"]
+                    "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L4_Val": "0", "L4_OK": False,
+                    "V_Q2_M": 0, "V_Q12_M": 0, "V_Q7_M": 0, "V_Q19_M": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0
                 })
                 continue
                 
@@ -958,12 +944,12 @@ with tab_prima:
                 total_validos_6mm = cant_si + cant_no
                 if total_validos_6mm > 0:
                     tasa_6mm = round((cant_si / total_validos_6mm) * 100, 1)
-                    ok_llave1 = (tasa_6mm >= meta_llave1_umbral)
+                    ok_llave1 = (tasa_6mm >= 77.0)
                     val_l1_display = f"{tasa_6mm}%"
             
             # --- LLAVE 2: NPS MÍNIMO GLOBAL ---
             score_nps_mes, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")
-            ok_llave2 = (score_nps_mes >= meta_llave2_umbral)
+            ok_llave2 = (score_nps_mes >= 86.3)
             
             # --- LLAVE 3: TASA DE MAIL VÁLIDO ---
             pct_mail_val = 0.0
@@ -997,70 +983,57 @@ with tab_prima:
                             ok_llave3 = (pct_mail_val >= 80.0)
                             val_l3_display = f"{pct_mail_val}%"
             
-            # --- LLAVE 5: MUESTRA MÍNIMA ---
+            # --- LLAVE 4: MUESTRA MÍNIMA ---
             total_encuestas_mes = len(df_mes_marca_filtro)
-            ok_llave5 = (total_encuestas_mes >= meta_llave5_umbral)
+            ok_llave4 = (total_encuestas_mes >= 10)
             
-            # Cierre integral de candado maestro de llaves (4 llaves obligatorias)
-            llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
+            # Estado del candado maestro
+            llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave4
             
             # --- CÁLCULO INDEPENDIENTE DE DRIVERS CON ESCALAS DISCRIMINADAS POR MES ---
-            monto_d1 = 0
-            monto_d2 = 0
-            monto_d3 = 0
-            monto_d4 = 0
+            monto_q2 = 0
+            monto_q12 = 0
+            monto_q7 = 0
+            monto_q19 = 0
             
-            if es_escala_2025_post_mayo:
-                # Estructura de Drivers y metas cargada en la imagen de 2025
-                if score_nps_mes >= 93.5: monto_d1 = 210000
-                elif score_nps_mes >= 89.8: monto_d1 = 160000
+            if not es_escala_nueva:
+                # Enero a Marzo (Límites antiguos)
+                if score_nps_mes >= 93.5: monto_q2 = 270000
+                elif score_nps_mes >= 88.3: monto_q2 = 200000
                 
-                score_q11, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")
-                if score_q11 >= 94.0: monto_d2 = 105000
-                elif score_q11 >= 89.3: monto_d2 = 80000
-                
-                score_q8, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q8 - Competencia Asesor de Servicio")
-                if score_q8 >= 95.5: monto_d3 = 52500
-                elif score_q8 >= 93.3: monto_d3 = 40000
+                score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
+                if score_q12 >= 94.0: monto_q12 = 150000
+                elif score_q12 >= 87.8: monto_q12 = 120000
                 
                 score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
-                if score_q7 >= 95.5: monto_d4 = 52500
-                elif score_q7 >= 93.3: monto_d4 = 40000
+                if score_q7 >= 95.5: monto_q7 = 60000
+                elif score_q7 >= 91.8: monto_q7 = 40000
                 
-                max_teorico_unitario = 420000
-                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amab. Asesor"]
+                score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
+                if score_q19 >= 95.5: monto_q19 = 60000
+                elif score_q19 >= 91.8: monto_q19 = 40000
+                
+                max_teorico_unitario = 540000
             else:
-                # Estructura del año 2026 (Escala vigente corregida por meses anteriores)
-                if not es_escala_2026_post_abril:
-                    if score_nps_mes >= 93.5: monto_d1 = 270000
-                    elif score_nps_mes >= 88.3: monto_d1 = 200000
-                    score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
-                    if score_q12 >= 94.0: monto_d2 = 150000
-                    elif score_q12 >= 87.8: monto_d2 = 120000
-                    score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
-                    if score_q7 >= 95.5: monto_d3 = 60000
-                    elif score_q7 >= 91.8: monto_d3 = 40000
-                    score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
-                    if score_q19 >= 95.5: monto_d4 = 60000
-                    elif score_q19 >= 91.8: monto_d4 = 40000
-                    max_teorico_unitario = 540000
-                else:
-                    if score_nps_mes >= 93.5: monto_d1 = 310000
-                    elif score_nps_mes >= 88.3: monto_d1 = 230000
-                    score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
-                    if score_q12 >= 94.0: monto_d2 = 160000
-                    elif score_q12 >= 87.8: monto_d2 = 140000
-                    score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
-                    if score_q7 >= 95.5: monto_d3 = 80000
-                    elif score_q7 >= 91.8: monto_d3 = 50000
-                    score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
-                    if score_q19 >= 95.5: monto_d4 = 80000
-                    elif score_q19 >= 91.8: monto_d4 = 50000
-                    max_teorico_unitario = 630000
-                    
-                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad de Trabajo", "🔹 Q7 Cortesía y Amabilidad", "🔹 Q19 Satisfacción de Contacto"]
+                # Abril a Junio en adelante (Nueva escala incrementada según imagen)
+                if score_nps_mes >= 93.5: monto_q2 = 310000
+                elif score_nps_mes >= 88.3: monto_q2 = 230000
                 
-            suma_drivers_mes = (monto_d1 + monto_d2 + monto_d3 + monto_d4) if llaves_aprobadas_mes else 0
+                score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
+                if score_q12 >= 94.0: monto_q12 = 160000
+                elif score_q12 >= 87.8: monto_q12 = 140000
+                
+                score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
+                if score_q7 >= 95.5: monto_q7 = 80000
+                elif score_q7 >= 91.8: monto_q7 = 50000
+                
+                score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
+                if score_q19 >= 95.5: monto_q19 = 80000
+                elif score_q19 >= 91.8: monto_q19 = 50000
+                
+                max_teorico_unitario = 630000
+                
+            suma_drivers_mes = (monto_q2 + monto_q12 + monto_q7 + monto_q19) if llaves_aprobadas_mes else 0
             total_liq_sector_mes = suma_drivers_mes * personas_declaradas
             
             monto_puro_liquidado[m_num] = total_liq_sector_mes
@@ -1071,14 +1044,12 @@ with tab_prima:
                 "L1_Val": val_l1_display, "L1_OK": ok_llave1,
                 "L2_Val": f"{score_nps_mes}%", "L2_OK": ok_llave2,
                 "L3_Val": val_l3_display, "L3_OK": ok_llave3,
-                "Es_2025": es_escala_2025_post_mayo,
-                "L5_Val": str(total_encuestas_mes), "L5_OK": ok_llave5,
-                "V_D1": monto_d1, "V_D2": monto_d2, "V_D3": monto_d3, "V_D4": monto_d4,
-                "Suma_D_M": suma_drivers_mes, "Pers": personas_declaradas, "Liq_S_M": total_liq_sector_mes,
-                "Labels": labels_drivers
+                "L4_Val": str(total_encuestas_mes), "L4_OK": ok_llave4,
+                "V_Q2_M": monto_q2, "V_Q12_M": monto_q12, "V_Q7_M": monto_q7, "V_Q19_M": monto_q19,
+                "Suma_D_M": suma_drivers_mes, "Pers": personas_declaradas, "Liq_S_M": total_liq_sector_mes
             })
 
-        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% CON CANDADO CONSOLIDADO ---
+        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% COMPLETA CON CANDADO DE NOTA REAL ---
         lista_render_completa = []
         montos_grafico_alcanzado = []
         montos_grafico_maximo = []
@@ -1090,32 +1061,31 @@ with tab_prima:
             monto_bonus_trimestral = 0
             aplica_fila_bonus = False
             
-            if m in [3, 6, 9, 12]:
+            if m in [3, 6]:
                 aplica_fila_bonus = True
                 indices_trimestre = [m-2, m-1, m]
                 
+                # Filtrar base de encuestas agrupadas del trimestre
                 df_trim_encuestas = df_marca_anio[df_marca_anio['Mes_Num'].isin(indices_trimestre)]
                 if marcas_prima_sel and 'Marca' in df_trim_encuestas.columns:
                     df_trim_encuestas = df_trim_encuestas[df_trim_encuestas['Marca'].isin(marcas_prima_sel)]
-                    
-                if len(df_trim_encuestas) > 0 and d["Es_2025"]:
-                    # Candado Trimestral Escala 2025 basado en "nuevos objetivos de 2025 mayo.png"
-                    nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
-                    nps_trim_q11, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q11 - Explicación trabajo - costo")
-                    nps_trim_q8, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q8 - Competencia Asesor de Servicio")
-                    nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
-                    
-                    if (nps_trim_q2 >= 89.8 and nps_trim_q11 >= 89.3 and nps_trim_q8 >= 93.3 and nps_trim_q7 >= 93.3):
-                        suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
-                        monto_bonus_trimestral = round(suma_primas_puras_trim * 0.05, 0)
-                elif len(df_trim_encuestas) > 0:
-                    # Candado Trimestral Escala Estándar 2026
+                
+                if len(df_trim_encuestas) > 0:
+                    # Calcular el NPS consolidado real del trimestre para los 4 indicadores
                     nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
                     nps_trim_q12, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q12 - Calidad del trabajo")
                     nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
                     nps_trim_q19, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q19 - Satisfacción con el Contacto")
                     
-                    if (nps_trim_q2 >= 88.3 and nps_trim_q12 >= 87.8 and nps_trim_q7 >= 91.8 and nps_trim_q19 >= 91.8):
+                    # Definir los umbrales mínimos requeridos según el periodo vigente
+                    p_min_q2 = 88.3
+                    p_min_q12 = 87.8
+                    p_min_q7 = 91.8
+                    p_min_q19 = 91.8
+                    
+                    # Candado Trimestral: Los 4 deben superar el piso en la nota acumulada
+                    if (nps_trim_q2 >= p_min_q2 and nps_trim_q12 >= p_min_q12 and 
+                        nps_trim_q7 >= p_min_q7 and nps_trim_q19 >= p_min_q19):
                         suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
                         monto_bonus_trimestral = round(suma_primas_puras_trim * 0.05, 0)
 
@@ -1127,12 +1097,15 @@ with tab_prima:
                 montos_grafico_maximo.append(max_teorico_acumulado[m])
                 montos_grafico_perdida.append(max(0, perdida_mes))
                 meses_grafico_nombres.append(d["Mes_Nombre"])
-                
+            
             lista_render_completa.append({
-                **d, "Bonus_5": monto_bonus_trimestral, "Aplica_B": aplica_fila_bonus, "Final_M": final_recalculado_mes
+                **d,
+                "Bonus_5": monto_bonus_trimestral,
+                "Aplica_B": aplica_fila_bonus,
+                "Final_M": final_recalculado_mes
             })
 
-        # --- GENERACIÓN DE LA MATRIZ DINÁMICA EN HTML ---
+        # --- ARQUITECTURA DE RENDIMIENTO EN MATRIZ HTML ---
         if lista_render_completa:
             html_tabla = """
             <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
@@ -1144,68 +1117,54 @@ with tab_prima:
                 html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
             html_tabla += "</tr></thead><tbody>"
             
-            # SECCIÓN LLAVES
             html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
             
-            # Fila Llave 1
-            lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>📞 Contacto Posterior 6MM (Meta &ge; 77%)</td>"
             for d in lista_render_completa:
                 bg = "#D4EDDA; color: #155724;" if d["L1_OK"] else "#F8D7DA; color: #721C24;"
                 if d["L1_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L1_Val']}</td>"
             html_tabla += "</tr>"
             
-            # Fila Llave 2
-            lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>🏢 NPS Mínimo Global (Meta &ge; 86.3%)</td>"
             for d in lista_render_completa:
                 bg = "#D4EDDA; color: #155724;" if d["L2_OK"] else "#F8D7DA; color: #721C24;"
                 if d["L2_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L2_Val']}</td>"
             html_tabla += "</tr>"
             
-            # Fila Llave 3
             html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa de Mail Válido (Meta &ge; 80%)</td>"
             for d in lista_render_completa:
                 bg = "#D4EDDA; color: #155724;" if d["L3_OK"] else "#F8D7DA; color: #721C24;"
                 if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
             html_tabla += "</tr>"
-                
-            # Fila Llave Muestra Mínima
-            lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
+            
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)</td>"
             for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L5_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L5_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
+                bg = "#D4EDDA; color: #155724;" if d["L4_OK"] else "#F8D7DA; color: #721C24;"
+                if d["L4_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L4_Val']}</td>"
             html_tabla += "</tr>"
             
-            # SECCIÓN DRIVERS
             html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
             
-            # Fila Driver 1
-            html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][0]}</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_D1']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>🔹 Recomendación (Q2)</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_Q2_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            # Fila Driver 2
-            html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][1]}</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_D2']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>🔹 Q12 Calidad de Trabajo</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_Q12_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            # Fila Driver 3
-            html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][2]}</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_D3']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>🔹 Q7 Cortesía y Amabilidad</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_Q7_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            # Fila Driver 4
-            html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][3]}</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_D4']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>🔹 Q19 Satisfacción de Contacto</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${d['V_Q19_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            # RESUMEN ECONÓMICO FINAL
             html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
             html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
             for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
@@ -1216,13 +1175,13 @@ with tab_prima:
             html_tabla += "</tr>"
             
             html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
             html_tabla += "<tr style='color: #047857; background-color: #f0fdf4;'> layout_width: full;"
             html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral Adicional (5%)</td>"
             for d in lista_render_completa:
-                str_b = f"${d['Bonus_5']:,.0f}" if d["Bonus_5"] > 0 else "-"
+                str_b = f"${d['Bonus_5']:,.0f}" if d["Bonus_5"] > 0 else ("-" if d["Aplica_B"] else "-")
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold;'>{str_b}</td>"
             html_tabla += "</tr>"
             
@@ -1242,12 +1201,16 @@ with tab_prima:
                 st.markdown("#### 📈 Análisis de Eficiencia Económica: Ganancia vs. Pérdida del Sector")
                 
                 fig_econ = go.Figure()
+                
+                # Sombreado de Área Máxima Teórica (Techo gris de referencia)
                 fig_econ.add_trace(go.Scatter(
                     x=meses_grafico_nombres, y=montos_grafico_maximo,
                     mode='lines', name='Monto Máximo Posible',
                     line=dict(color='#94A3B8', width=2, dash='dash'),
                     hoverinfo='skip'
                 ))
+                
+                # Línea de Logrado Final + Área Verde de Ganancia hasta el suelo
                 fig_econ.add_trace(go.Scatter(
                     x=meses_grafico_nombres, y=montos_grafico_alcanzado,
                     mode='lines+markers+text', name='Dinero Real Cobrado',
@@ -1259,6 +1222,8 @@ with tab_prima:
                     fillcolor='rgba(16, 185, 129, 0.12)',
                     hovertemplate='<b>%{x}</b><br>Cobrado: %{y:$,.0f}<extra></extra>'
                 ))
+                
+                # Línea de Pérdida + Área Roja de Alerta (Dinero dejado sobre la mesa)
                 fig_econ.add_trace(go.Scatter(
                     x=meses_grafico_nombres, y=montos_grafico_perdida,
                     mode='lines+markers', name='Dinero No Cobrado (Pérdida)',
@@ -1268,6 +1233,7 @@ with tab_prima:
                     fillcolor='rgba(239, 68, 68, 0.06)',
                     hovertemplate='<b>%{x}</b><br>Pérdida: %{y:$,.0f}<extra></extra>'
                 ))
+                
                 fig_econ.update_layout(
                     hovermode='x unified',
                     yaxis=dict(title='Monto en Pesos ($)', showgrid=True, gridcolor='#E2E8F0'),
