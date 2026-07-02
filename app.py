@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import math
-import datetime # Importado para calcular el desfasaje de 45 días
+import datetime
 
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
@@ -673,7 +673,7 @@ with tab_quejas:
                     
                 st.dataframe(df_detractores[columnas_queja], use_container_width=True, hide_index=True)
             else:
-                st.success("🎉 ¡Excelente! No se registraron clientes detractors para los filtros seleccionados.")
+                st.success("🎉 ¡Excelente! No se registraron clientes detractores para los filtros seleccionados.")
         else:
             st.info("Columnas de análisis de quejas no encontradas.")
 
@@ -999,7 +999,10 @@ with tab_prima:
             llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
             
             # --- PROCESAMIENTO E INYECCIÓN DE OBJETIVOS SEGÚN CORTE TEMPORAL ---
-            monto_d1, monto_d2, monto_d3, monto_d4 = 0, 0, 0, 0
+            monto_d1 = 0
+            monto_d2 = 0
+            monto_d3 = 0
+            monto_d4 = 0
             
             if es_escala_2025_post_mayo:
                 if score_nps_mes >= 93.5: monto_d1 = 210000
@@ -1071,13 +1074,11 @@ with tab_prima:
             color_bonus_html = "color:#64748B;"
             aplica_fila_bonus = (m in [3, 6, 9, 12])
             
-            # Bloque de definición de trimestres naturales
             if m in [1, 2, 3]: indices_trim = [1, 2, 3]
             elif m in [4, 5, 6]: indices_trim = [4, 5, 6]
             elif m in [7, 8, 9]: indices_trim = [7, 8, 9]
             else: indices_trim = [10, 11, 12]
             
-            # Filtrar encuestas acumuladas del trimestre actual hasta el mes en curso (Predictivo Parcial)
             meses_acumulados_hasta_ahora = [idx for idx in indices_trim if idx <= m]
             df_trim_encuestas = df_marca_anio[df_marca_anio['Mes_Num'].isin(meses_acumulados_hasta_ahora)]
             if marcas_prima_sel and 'Marca' in df_trim_encuestas.columns:
@@ -1101,7 +1102,6 @@ with tab_prima:
                     cumple_acum_parcial = (nps_t_q2 >= 88.3 and nps_t_q12 >= 87.8 and nps_t_q7 >= 91.8 and nps_t_q19 >= 91.8)
                     indicador_falla = "Q2" if nps_t_q2 < 88.3 else ("Q12" if nps_t_q12 < 87.8 else ("Q7" if nps_t_q7 < 91.8 else "Q19"))
                 
-                # Renderizar estado en base a si es mes de cierre económico o mes de curso intermedio
                 if cumple_acum_parcial:
                     if aplica_fila_bonus:
                         suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trim)
@@ -1122,7 +1122,6 @@ with tab_prima:
             final_recalculado_mes = d["Liq_S_M"] + monto_bonus_trimestral
             final_recalculado_acumulado[m] = final_recalculado_mes
             
-            # Calcular % de Eficiencia de cumplimiento de la Prima
             pct_cumplimiento_mes = round((d["Liq_S_M"] / max_teorico_acumulado[m] * 100), 1) if max_teorico_acumulado[m] > 0 else 0.0
             
             lista_render_completa.append({
@@ -1130,221 +1129,211 @@ with tab_prima:
                 "Pct_Cumpl": pct_cumplimiento_mes, "Final_M": final_recalculado_mes
             })
 
-        # --- GENERACIÓN DE LA MATRIZ DE CONTROL FINANCIERO HTML ---
-        html_tabla = """
-        <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
-            <thead>
-                <tr style='background-color: #1E293B; color: white;'>
-                    <th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-size: 14px;'>Estructura de Control y Prima Anual</th>
-        """
-        for d in lista_render_completa:
-            html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
-        html_tabla += "</tr></thead><tbody>"
-        
-        # FILAS DE LLAVES MAESTRAS
-        html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
-        
-        lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
-        html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
-        for d in lista_render_completa:
-            bg = "#D4EDDA; color: #155724;" if d["L1_OK"] else "#F8D7DA; color: #721C24;"
-            if d["L1_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L1_Val']}</td>"
-        html_tabla += "</tr>"
-        
-        lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
-        html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
-        for d in lista_render_completa:
-            bg = "#D4EDDA; color: #155724;" if d["L2_OK"] else "#F8D7DA; color: #721C24;"
-            if d["L2_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L2_Val']}</td>"
-        html_tabla += "</tr>"
-        
-        html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa de Mail Válido (Meta &ge; 80%)</td>"
-        for d in lista_render_completa:
-            bg = "#D4EDDA; color: #155724;" if d["L3_OK"] else "#F8D7DA; color: #721C24;"
-            if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
-        html_tabla += "</tr>"
-            
-        lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
-        html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
-        for d in lista_render_completa:
-            bg = "#D4EDDA; color: #155724;" if d["L5_OK"] else "#F8D7DA; color: #721C24;"
-            if d["L5_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
-        html_tabla += "</tr>"
-        
-        # SECCIÓN DRIVERS INDIVIDUALES
-        html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
-        for row_idx in range(4):
-            html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][row_idx]}</td>"
+        # --- GENERACIÓN DE LA MATRIZ DINÁMICA EN HTML ---
+        if lista_render_completa:
+            html_tabla = """
+            <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
+                <thead>
+                    <tr style='background-color: #1E293B; color: white;'>
+                        <th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-size: 14px;'>Estructura de Control y Prima Anual</th>
+            """
             for d in lista_render_completa:
-                m_val = d["V_D1"] if row_idx==0 else (d["V_D2"] if row_idx==1 else (d["V_D3"] if row_idx==2 else d["V_D4"]))
-                html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${m_val:,.0f}</td>".replace("$0", "$0")
+                html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
+            html_tabla += "</tr></thead><tbody>"
+            
+            html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
+            
+            lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
+            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
+            for d in lista_render_completa:
+                bg = "#D4EDDA; color: #155724;" if d["L1_OK"] else "#F8D7DA; color: #721C24;"
+                if d["L1_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L1_Val']}</td>"
             html_tabla += "</tr>"
             
-        # RESUMEN DE PRIMAS Y MULTIPLICADORES
-        html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
-        html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
-        for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
-        html_tabla += "</tr>"
-        
-        # NUEVA FILA: PORCENTAJE DE CUMPLIMIENTO DE LA PRIMA DE CALIDAD
-        html_tabla += "<tr style='background-color: #F1F5F9; font-weight: bold;'>"
-        html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; color:#0F172A;'>📊 % Cumplimiento de la Prima</td>"
-        for d in lista_render_completa:
-            color_pct = "#10B981" if d["Pct_Cumpl"] >= 90 else ("#F59E0B" if d["Pct_Cumpl"] >= 50 else "#EF4444")
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{color_pct};'>{d['Pct_Cumpl']:.1f}%</td>"
-        html_tabla += "</tr>"
-        
-        html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>👥 Personal Declarado</td>"
-        for d in lista_render_completa:
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>{d['Pers']}</td>"
-        html_tabla += "</tr>"
-        
-        html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
-        for d in lista_render_completa:
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
-        html_tabla += "</tr>"
-        
-        # FILA NUEVA: REAJUSTE DE CONTROL PREDICTIVO CONTINUO (ALERTAS TEMPRANAS)
-        html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'>"
-        html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral (5%) [Predictivo]</td>"
-        for d in lista_render_completa:
-            html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
-        html_tabla += "</tr>"
-        
-        html_tabla += "<tr style='background-color: #D1FAE5; border-top: 2px solid #10B981;'>"
-        html_tabla += "<td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; font-size: 14px;'>💵 LIQUIDACIÓN FINAL CON BONUS</td>"
-        for d in lista_render_completa: html_tabla += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857; font-size: 14px;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
-        html_tabla += "</tr>"
-        
-        html_tabla += "</tbody></table>"
-        st.markdown(html_tabla, unsafe_allow_html=True)
-        
-        # ==============================================================================
-        # NUEVO SECTOR: FILTROS EXCLUSIVOS Y TARJETAS KPI DE FLUJO DE CAJA (DESFASE 45 DÍAS)
-        # ==============================================================================
-        st.markdown("---")
-        st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
-        st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje habitual de las transferencias de la marca, utiliza estos selectores para conciliar los cobros reales.</p>", unsafe_allow_html=True)
-        
-        col_sel_caja_1, col_sel_caja_2 = st.columns(2)
-        with col_sel_caja_1:
-            anio_caja_sel = st.selectbox("Año de Gestión (Flujo Caja):", options=anios_disponibles_prima, key="sb_anio_caja")
-        with col_sel_caja_2:
-            # Lógica Automática 45 días para el "Meses cobrados"
+            lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
+            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
+            for d in lista_render_completa:
+                bg = "#D4EDDA; color: #155724;" if d["L2_OK"] else "#F8D7DA; color: #721C24;"
+                if d["L2_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L2_Val']}</td>"
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa de Mail Válido (Meta &ge; 80%)</td>"
+            for d in lista_render_completa:
+                bg = "#D4EDDA; color: #155724;" if d["L3_OK"] else "#F8D7DA; color: #721C24;"
+                if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
+            html_tabla += "</tr>"
+                
+            lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
+            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
+            for d in lista_render_completa:
+                bg = "#D4EDDA; color: #155724;" if d["L5_OK"] else "#F8D7DA; color: #721C24;"
+                if d["L5_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
+            
+            for row_idx in range(4):
+                html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][row_idx]}</td>"
+                for d in lista_render_completa:
+                    m_val = d["V_D1"] if row_idx==0 else (d["V_D2"] if row_idx==1 else (d["V_D3"] if row_idx==2 else d["V_D4"]))
+                    html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${m_val:,.0f}</td>".replace("$0", "$0")
+                html_tabla += "</tr>"
+            
+            html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
+            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr style='background-color: #F1F5F9; font-weight: bold;'>"
+            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; color:#475569;'>📊 Eficiencia Comercial del Mes</td>"
+            for d in lista_render_completa:
+                color_pct = "#10B981" if d["Pct_Cumpl"] >= 90 else ("#F59E0B" if d["Pct_Cumpl"] >= 50 else "#EF4444")
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{color_pct};'>{d['Pct_Cumpl']:.1f}%</td>"
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>👥 Personal Declarado</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>{d['Pers']}</td>"
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'>"
+            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral (5%) [Predictivo]</td>"
+            for d in lista_render_completa:
+                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
+            html_tabla += "</tr>"
+            
+            html_tabla += "<tr style='background-color: #D1FAE5; border-top: 2px solid #10B981;'>"
+            html_tabla += "<td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; font-size: 14px;'>💵 LIQUIDACIÓN FINAL CON BONUS</td>"
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857; font-size: 14px;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
+            html_tabla += "</tr>"
+            
+            html_tabla += "</tbody></table>"
+            st.markdown(html_tabla, unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # ==============================================================================
+            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA (DESFASE 45 DÍAS)
+            # ==============================================================================
+            st.markdown("---")
+            st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
+            st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje de las transferencias de la marca, utiliza estos selectores para auditar los cobros reales.</p>", unsafe_allow_html=True)
+            
             fecha_actual = datetime.date.today()
             fecha_cobro = fecha_actual - datetime.timedelta(days=45)
             mes_default_nombre = MESES_ES.get(fecha_cobro.month, "Enero")
             
+            meses_nombres_presentes = [d["Mes_Nombre"] for d in lista_render_completa if d["L1_Val"] != "-"]
             opciones_meses = list(MESES_ES.values())
-            default_val = [mes_default_nombre] if mes_default_nombre in opciones_meses else [opciones_meses[0]]
+            default_val = [mes_default_nombre] if mes_default_nombre in meses_nombres_presentes else []
             
-            meses_caja_sel = st.multiselect("Meses cobrados:", options=opciones_meses, default=default_val, key="ms_meses_caja")
+            col_sel_c1, col_sel_c2 = st.columns(2)
+            with col_sel_c1:
+                anio_caja_sel = st.selectbox("Año de Gestión (Flujo Caja):", options=anios_disponibles_prima, key="sb_anio_caja")
+            with col_sel_c2:
+                meses_caja_sel = st.multiselect("Meses cobrados:", options=opciones_meses, default=default_val, key="ms_meses_caja")
             
-        # Calcular acumulados financieros mapeando la lista renderizada
-        monto_cobrado_efectivo = 0.0
-        monto_pendiente_prevision = 0.0
-        monto_perdido_acumulado = 0.0
-        
-        montos_grafico_alcanzado = []
-        montos_grafico_maximo = []
-        montos_grafico_perdida = []
-        meses_grafico_nombres = []
-        
-        # Iterar para calcular las tarjetas KPI y alimentar el gráfico
-        for d in lista_render_completa:
-            if d["L1_Val"] != "-": # Verifica que el mes tenga encuestas generadas
-                if d["Mes_Nombre"] in meses_caja_sel:
-                    # Meses seleccionados como ya "Cobrados"
-                    monto_cobrado_efectivo += d["Final_M"]
-                    
-                    # Cálculo de la pérdida: (Teórico Máximo del mes - Lo que se ganó finalmente)
+            monto_cobrado_efectivo = 0.0
+            monto_pendiente_prevision = 0.0
+            monto_perdido_acumulado = 0.0
+            
+            montos_grafico_alcanzado = []
+            montos_grafico_maximo = []
+            montos_grafico_perdida = []
+            meses_grafico_nombres = []
+            
+            for d in lista_render_completa:
+                if d["L1_Val"] != "-": 
+                    final_mes = d["Final_M"]
                     max_teorico = max_teorico_acumulado.get(d["Mes_Num"], 0)
-                    monto_perdido_acumulado += max(0, max_teorico - d["Final_M"])
-                else:
-                    # Meses con encuestas procesadas pero NO seleccionados como cobrados = Previsión Pendiente
-                    monto_pendiente_prevision += d["Final_M"]
-                
-                # Datos para el gráfico
-                montos_grafico_alcanzado.append(d["Final_M"])
-                montos_grafico_maximo.append(max_teorico_acumulado[d["Mes_Num"]])
-                montos_grafico_perdida.append(max(0, max_teorico_acumulado[d["Mes_Num"]] - d["Final_M"]))
-                meses_grafico_nombres.append(d["Mes_Nombre"])
-        
-        # Formateo de montos para UI
-        str_cobrado = f"${monto_cobrado_efectivo:,.0f}".replace(",", ".")
-        str_pendiente = f"${monto_pendiente_prevision:,.0f}".replace(",", ".")
-        str_perdido = f"${monto_perdido_acumulado:,.0f}".replace(",", ".")
-        
-        col_card_1, col_card_2, col_card_3 = st.columns(3)
-        with col_card_1:
-            st.markdown(f"""
-                <div class='kpi-card' style='border-left: 5px solid #10B981;'>
-                    <div class='kpi-label'>💰 MONTO ACUMULADO COBRADO</div>
-                    <div class='kpi-value' style='color:#065F46;'>{str_cobrado}</div>
-                    <div class='kpi-sub' style='color:#10B981;'>✓ Conciliado en meses seleccionados</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with col_card_2:
-            st.markdown(f"""
-                <div class='kpi-card' style='border-left: 5px solid #3B82F6;'>
-                    <div class='kpi-label'>⏳ PREVISIÓN PENDIENTE DE RECEPCIÓN</div>
-                    <div class='kpi-value' style='color:#1D4ED8;'>{str_pendiente}</div>
-                    <div class='kpi-sub' style='color:#3B82F6;'>ℹ Meses con datos no cobrados aún</div>
-                </div>
-            """, unsafe_allow_html=True)
-        with col_card_3:
-            st.markdown(f"""
-                <div class='kpi-card' style='border-left: 5px solid #EF4444;'>
-                    <div class='kpi-label'>📉 MONTO PERDIDO (NO ALCANZADO)</div>
-                    <div class='kpi-value' style='color:#B91C1C;'>{str_perdido}</div>
-                    <div class='kpi-sub' style='color:#EF4444;'>⚠ En los meses seleccionados</div>
-                </div>
-            """, unsafe_allow_html=True)
-        
-        # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO DE ÁREAS (PLOTLY) ---
-        if meses_grafico_nombres:
-            st.markdown("<br>", unsafe_allow_html=True)
-            fig_econ = go.Figure()
-            fig_econ.add_trace(go.Scatter(
-                x=meses_grafico_nombres, y=montos_grafico_maximo,
-                mode='lines', name='Monto Máximo Posible',
-                line=dict(color='#94A3B8', width=2, dash='dash'),
-                hoverinfo='skip'
-            ))
-            fig_econ.add_trace(go.Scatter(
-                x=meses_grafico_nombres, y=montos_grafico_alcanzado,
-                mode='lines+markers+text', name='Dinero Real Cobrado',
-                line=dict(color='#10B981', width=4),
-                marker=dict(size=8, color='#10B981'),
-                text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
-                textposition='top center',
-                fill='tozeroy',
-                fillcolor='rgba(16, 185, 129, 0.12)',
-                hovertemplate='<b>%{x}</b><br>Cobrado: %{y:$,.0f}<extra></extra>'
-            ))
-            fig_econ.add_trace(go.Scatter(
-                x=meses_grafico_nombres, y=montos_grafico_perdida,
-                mode='lines+markers', name='Dinero No Cobrado (Pérdida)',
-                line=dict(color='#EF4444', width=2),
-                marker=dict(size=6, color='#EF4444'),
-                fill='tonexty',
-                fillcolor='rgba(239, 68, 68, 0.06)',
-                hovertemplate='<b>%{x}</b><br>Pérdida: %{y:$,.0f}<extra></extra>'
-            ))
-            fig_econ.update_layout(
-                hovermode='x unified',
-                yaxis=dict(title='Monto en Pesos ($)', showgrid=True, gridcolor='#E2E8F0'),
-                xaxis=dict(showgrid=False),
-                margin=dict(l=40, r=40, t=20, b=40),
-                height=420,
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            st.plotly_chart(fig_econ, use_container_width=True)
+                    
+                    if d["Mes_Nombre"] in meses_caja_sel:
+                        monto_cobrado_efectivo += final_mes
+                        monto_perdido_acumulado += max(0, max_teorico - final_mes)
+                    else:
+                        monto_pendiente_prevision += final_mes
+                        
+                    montos_grafico_alcanzado.append(final_mes)
+                    montos_grafico_maximo.append(max_teorico)
+                    montos_grafico_perdida.append(max(0, max_teorico - final_mes))
+                    meses_grafico_nombres.append(d["Mes_Nombre"])
+            
+            str_cobrado = f"${monto_cobrado_efectivo:,.0f}".replace(",", ".")
+            str_pendiente = f"${monto_pendiente_prevision:,.0f}".replace(",", ".")
+            str_perdido = f"${monto_perdido_acumulado:,.0f}".replace(",", ".")
+            
+            col_c_1, col_c_2, col_c_3 = st.columns(3)
+            with col_c_1:
+                st.markdown(f"""
+                    <div class='kpi-card' style='border-left: 5px solid #10B981;'>
+                        <div class='kpi-label'>💰 MONTO COBRADO</div>
+                        <div class='kpi-value' style='color:#065F46;'>{str_cobrado}</div>
+                        <div class='kpi-sub' style='color:#10B981;'>✓ En meses seleccionados</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with col_c_2:
+                st.markdown(f"""
+                    <div class='kpi-card' style='border-left: 5px solid #3B82F6;'>
+                        <div class='kpi-label'>⏳ PREVISIÓN PENDIENTE</div>
+                        <div class='kpi-value' style='color:#1D4ED8;'>{str_pendiente}</div>
+                        <div class='kpi-sub' style='color:#3B82F6;'>ℹ Meses con datos sin cobrar</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            with col_c_3:
+                st.markdown(f"""
+                    <div class='kpi-card' style='border-left: 5px solid #EF4444;'>
+                        <div class='kpi-label'>📉 MONTO PERDIDO</div>
+                        <div class='kpi-value' style='color:#B91C1C;'>{str_perdido}</div>
+                        <div class='kpi-sub' style='color:#EF4444;'>⚠ En los meses seleccionados</div>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+            # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO DE ÁREAS (PLOTLY) ---
+            if meses_grafico_nombres:
+                st.markdown("<br>", unsafe_allow_html=True)
+                fig_econ = go.Figure()
+                fig_econ.add_trace(go.Scatter(
+                    x=meses_grafico_nombres, y=montos_grafico_maximo,
+                    mode='lines', name='Monto Máximo Posible',
+                    line=dict(color='#94A3B8', width=2, dash='dash'),
+                    hoverinfo='skip'
+                ))
+                fig_econ.add_trace(go.Scatter(
+                    x=meses_grafico_nombres, y=montos_grafico_alcanzado,
+                    mode='lines+markers+text', name='Dinero Real Cobrado',
+                    line=dict(color='#10B981', width=4),
+                    marker=dict(size=8, color='#10B981'),
+                    text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
+                    textposition='top center',
+                    fill='tozeroy',
+                    fillcolor='rgba(16, 185, 129, 0.12)',
+                    hovertemplate='<b>%{x}</b><br>Cobrado: %{y:$,.0f}<extra></extra>'
+                ))
+                fig_econ.add_trace(go.Scatter(
+                    x=meses_grafico_nombres, y=montos_grafico_perdida,
+                    mode='lines+markers', name='Dinero No Cobrado (Pérdida)',
+                    line=dict(color='#EF4444', width=2),
+                    marker=dict(size=6, color='#EF4444'),
+                    fill='tonexty',
+                    fillcolor='rgba(239, 68, 68, 0.06)',
+                    hovertemplate='<b>%{x}</b><br>Pérdida: %{y:$,.0f}<extra></extra>'
+                ))
+                fig_econ.update_layout(
+                    hovermode='x unified',
+                    yaxis=dict(title='Monto en Pesos ($)', showgrid=True, gridcolor='#E2E8F0'),
+                    xaxis=dict(showgrid=False),
+                    margin=dict(l=40, r=40, t=20, b=40),
+                    height=420,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_econ, use_container_width=True)
     else:
         st.info("No se localizó un historial anual para estructurar la matriz de llaves.")
