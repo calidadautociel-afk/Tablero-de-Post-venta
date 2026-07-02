@@ -126,7 +126,7 @@ def calcular_metricas_nps(df, columna):
     nps_score = pct_promotores - pct_detractores
     nps_score = max(0.0, round(nps_score, 1))
     
-    return nps_score, promotores, neutros, detractores
+    return nps_score, promotores, neutros, detractors
 
 def calcular_promedio(df, columna):
     if columna not in df.columns:
@@ -676,7 +676,7 @@ with tab_quejas:
                     
                 st.dataframe(df_detractores[columnas_queja], use_container_width=True, hide_index=True)
             else:
-                st.success("🎉 ¡Excelente! No se registraron clientes detractores para los filtros seleccionados.")
+                st.success("🎉 ¡Excelente! No se registraron clientes detractors para los filtros seleccionados.")
         else:
             st.info("Columnas de análisis de quejas no encontradas.")
 
@@ -738,7 +738,7 @@ with tab_telemarketer:
                 
                 total_intentos_global = c_whatsapp + c_telefonico + c_vacios
                 
-                # 1. EFECTIVIDAD VIRTUAL (WHATSAPP): Whatsapp / (Whatsapp + Vacios)
+                # 1. EFECTIVIDAD VIRTUAL (WHATSAPP): Whatsapp / (WhatsApp + Vacios)
                 den_virtual = c_whatsapp + c_vacios
                 pct_virtual = round((c_whatsapp / den_virtual * 100), 1) if den_virtual > 0 else None
                 
@@ -875,36 +875,33 @@ with tab_telemarketer:
 # ------------------------------------------------------------------------------
 with tab_prima:
     st.markdown("### 📊 Tablero de Auditoría de Llaves: Prima de Calidad Postventa")
-    st.markdown("Esta sección evalúa el cumplimiento de los **Thresholds Mínimos** requeridos a nivel sectorial para habilitar las liquidaciones de incentivos del taller.")
+    st.markdown("Esta sección evalúa de forma dinámica el cumplimiento de los **Thresholds Mínimos** requeridos a nivel sectorial para habilitar las liquidaciones de incentivos.")
     
-    # Filtro exclusivo de Año interno
+    # Selector de Año exclusivo interno
     anios_disponibles_prima = sorted(df_marca_raw['Año'].unique(), reverse=True)
     if anios_disponibles_prima:
         anio_prima_sel = st.selectbox("Seleccione Año para Evaluar la Prima:", options=anios_disponibles_prima, key="sb_anio_prima")
         
-        # Filtro de Marcas específico para acotar la auditoría de la prima si fuera necesario (opcional)
+        # Filtro de Marcas específico para acotar la auditoría de la prima
         marcas_prima_disponibles = sorted(df_marca_raw['Marca'].dropna().unique()) if 'Marca' in df_marca_raw.columns else ["PEUGEOT", "CITROEN"]
         marcas_prima_sel = st.multiselect("Filtrar por Marcas en la Prima:", options=marcas_prima_disponibles, default=marcas_prima_disponibles, key="ms_marcas_prima")
         
-        # Procesar datos base filtrados por año y marcas
+        # Procesar datos base filtrados por año y marcas seleccionadas
         df_marca_anio = df_marca_raw[df_marca_raw['Año'] == anio_prima_sel]
-        df_int_anio = df_int_raw.copy()
         
         if marcas_prima_sel:
             if 'Marca' in df_marca_anio.columns:
                 df_marca_anio = df_marca_anio[df_marca_anio['Marca'].isin(marcas_prima_sel)]
-            if 'Marca' in df_int_anio.columns:
-                df_int_anio = df_int_anio[df_int_anio['Marca'].isin(marcas_prima_sel)]
                 
         # Estructurar la matriz de meses (1 al 12) para armar las columnas
         meses_columnas = list(range(1, 13))
         line_data_prima = []
         
-        # Procesamiento dinámico mes a mes para armar la grilla de auditoría sectorial
+        # Procesamiento dinámico mes a mes
         for m_num in meses_columnas:
             df_mes_marca = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
             
-            # Si el mes no tiene ninguna encuesta, saltamos o lo dejamos en blanco
+            # Si el mes no tiene encuestas absolutas en este año, renderizamos indicadores limpios en vacío
             if len(df_mes_marca) == 0:
                 line_data_prima.append({
                     "Mes_Nombre": MESES_ES[m_num],
@@ -916,25 +913,27 @@ with tab_prima:
                 continue
                 
             # ==============================================================================
-            # LLAVE 1: CONTACTO POSTERIOR 6MM (Meta >= 77% - Ventana Móvil)
+            # LLAVE 1: CONTACTO POSTERIOR 6MM (Meta >= 77% - Ventana Móvil Corregida de 6 Meses)
             # ==============================================================================
-            # Se calcula sumando los registros del mes actual y los 5 meses anteriores del mismo año
+            # Filtramos la base del año actual para la ventana móvil (mes actual y 5 anteriores)
             df_6mm_marca = df_marca_anio[(df_marca_anio['Mes_Num'] > (m_num - 6)) & (df_marca_anio['Mes_Num'] <= m_num)]
             
-            # Simulación segura basada en respuestas válidas acumuladas si la columna existe
-            col_contactado = next((c for c in df_6mm_marca.columns if 'Contactado' in c or 'Q18' in c), None)
-            if col_contactado:
-                total_6mm = df_6mm_marca[col_contactado].dropna().count()
-                if total_6mm > 0:
-                    # Contamos casos que no sean cierres fallidos o nulos
-                    validos_6mm = df_6mm_marca[df_6mm_marca[col_contactado].astype(str).str.lower().str.contains('contactado|si', na=False)].shape[0]
-                    tasa_6mm = round((validos_6mm / total_6mm) * 100, 1)
-                else:
-                    tasa_6mm = 78.2  # Base representativa por defecto para inicializar la grilla
-            else:
-                tasa_6mm = 78.2
+            tasa_6mm = 0.0
+            ok_llave1 = False
+            val_l1_display = "-"
+            
+            if "Q18 - Contactado" in df_6mm_marca.columns:
+                serie_q18 = df_6mm_marca["Q18 - Contactado"].astype(str).str.strip()
                 
-            ok_llave1 = (tasa_6mm >= 77.0)
+                # Contamos exclusivamente los "Sí" y "No" reales, dejando fuera los vacíos
+                cant_si = len(serie_q18[serie_q18.str.lower() == 'sí']) + len(serie_q18[serie_q18.str.lower() == 'si'])
+                cant_no = len(serie_q18[serie_q18.str.lower() == 'no'])
+                total_validos_6mm = cant_si + cant_no
+                
+                if total_validos_6mm > 0:
+                    tasa_6mm = round((cant_si / total_validos_6mm) * 100, 1)
+                    ok_llave1 = (tasa_6mm >= 77.0)
+                    val_l1_display = f"{tasa_6mm}%"
             
             # ==============================================================================
             # LLAVE 2: NPS MÍNIMO GLOBAL (Meta >= 86.3% - Mes Actual)
@@ -943,9 +942,11 @@ with tab_prima:
             ok_llave2 = (score_nps_mes >= 86.3)
             
             # ==============================================================================
-            # LLAVE 3: TASA DE MAIL VÁLIDO (Meta >= 80% - Hoja Externa)
+            # LLAVE 3: TASA DE MAIL VÁLIDO (Meta >= 80% - Hoja Externa Cruzada por Mes y Marca)
             # ==============================================================================
-            pct_mail_val = 81.4  # Valor base por defecto si no hay coincidencia exacta
+            pct_mail_val = 0.0
+            ok_llave3 = False
+            val_l3_display = "-"
             nombre_mes_buscar = MESES_ES[m_num]
             
             if not df_email_llave_raw.empty:
@@ -954,23 +955,31 @@ with tab_prima:
                 col_marca_ext = next((c for c in df_email_llave_raw.columns if c.lower() == 'marca'), None)
                 
                 if col_tasa_mail and col_mes_ext:
-                    # Filtrar por mes en la hoja externa
+                    # Filtrar por correspondencia del mes actual
                     df_row_mail = df_email_llave_raw[df_email_llave_raw[col_mes_ext].astype(str).str.strip().str.lower() == nombre_mes_buscar.lower()]
                     
-                    # Si se seleccionó una marca en específico, intentamos acotar por marca también
+                    # Si hay marcas seleccionadas en el widget interno, cruzamos por marcas correspondientes
                     if marcas_prima_sel and col_marca_ext:
                         marcas_en_hoja = [m.lower() for m in marcas_prima_sel]
                         df_row_mail = df_row_mail[df_row_mail[col_marca_ext].astype(str).str.strip().str.lower().isin(marcas_en_hoja)]
                         
                     if not df_row_mail.empty:
-                        val_raw = df_row_mail.iloc[0][col_tasa_mail]
-                        if isinstance(val_raw, str):
-                            val_raw = val_raw.replace('%', '').replace(',', '.').strip()
-                        num_parsed = pd.to_numeric(val_raw, errors='coerce')
-                        if pd.notnull(num_parsed):
-                            pct_mail_val = round(num_parsed if num_parsed > 1.0 else num_parsed * 100, 1)
-            
-            ok_llave3 = (pct_mail_val >= 80.0)
+                        # Calculamos el promedio de las tasas si hay más de una fila que coincide (ej. Peugeot + Citroen juntas)
+                        tasas_lista = []
+                        for _, row in df_row_mail.iterrows():
+                            val_raw = row[col_tasa_mail]
+                            if isinstance(val_raw, str):
+                                val_raw = val_raw.replace('%', '').replace(',', '.').strip()
+                            num_parsed = pd.to_numeric(val_raw, errors='coerce')
+                            if pd.notnull(num_parsed):
+                                # Estandarizar si el número viene en base decimal o porcentual directa
+                                val_final = num_parsed if num_parsed > 1.0 else num_parsed * 100
+                                tasas_lista.append(val_final)
+                                
+                        if tasas_lista:
+                            pct_mail_val = round(sum(tasas_lista) / len(tasas_lista), 1)
+                            ok_llave3 = (pct_mail_val >= 80.0)
+                            val_l3_display = f"{pct_mail_val}%"
             
             # ==============================================================================
             # LLAVE 4: MUESTRA MÍNIMA DE ENCUESTAS (Meta >= 10 - Mes Actual)
@@ -978,12 +987,12 @@ with tab_prima:
             total_encuestas_mes = len(df_mes_marca)
             ok_llave4 = (total_encuestas_mes >= 10)
             
-            # Guardar resultados procesados
+            # Guardar resultados procesados del mes analizado
             line_data_prima.append({
                 "Mes_Nombre": MESES_ES[m_num],
-                "L1_Val": f"{tasa_6mm}%", "L1_OK": ok_llave1,
+                "L1_Val": val_l1_display, "L1_OK": ok_llave1,
                 "L2_Val": f"{score_nps_mes}%", "L2_OK": ok_llave2,
-                "L3_Val": f"{pct_mail_val}%", "L3_OK": ok_llave3,
+                "L3_Val": val_l3_display, "L3_OK": ok_llave3,
                 "L4_Val": str(total_encuestas_mes), "L4_OK": ok_llave4
             })
 
@@ -1038,4 +1047,4 @@ with tab_prima:
             st.markdown("<br><br>", unsafe_allow_html=True)
             st.info("💡 **Regla de Cierre:** El sector de Postventa habilitará la liquidación de sus drivers comerciales únicamente en los meses donde **las 4 llaves completas figuren en Verde**.")
     else:
-        st.info("No se localizó un historial anual calendarizado para estructurar la matriz de llaves.")
+        st.info("No se localizó un historial anual para estructurar la matriz de llaves.")
