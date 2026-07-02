@@ -48,7 +48,7 @@ st.markdown("""
 # URLs públicas de Google Sheets (Bases de datos + Hoja de Tasa de Emails)
 SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
-SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
+SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4woWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
 
 # Mapeo de meses en español
 MESES_ES = {
@@ -547,7 +547,7 @@ with tab_ficha:
                 fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Marca'], mode='lines+markers+text', name=f'NPS Marca', line=dict(color='#1E293B', width=3), marker=dict(size=10, color='#1E293B'), text=df_grafico['NPS_Marca'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center', hovertemplate='<b>%{x}</b><br>Marca: %{y}%<extra></extra>'))
                 fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Interna'], mode='lines+markers+text', name=f'NPS Interno', line=dict(color='#10B981', width=3), marker=dict(size=10, color='#10B981'), text=df_grafico['NPS_Interna'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='bottom center', hovertemplate='<b>%{x}</b><br>Interno: %{y}%<extra></extra>'))
                 fig_line.add_trace(go.Scatter(x=[df_grafico['Periodo'].iloc[0], df_grafico['Periodo'].iloc[-1]], y=[94, 94], mode='lines', name='Objetivo (94%)', line=dict(color='#22C55E', width=2, dash='dash'), hoverinfo='skip'))
-                fig_line.update_layout(title={'text': "Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", 'font': {'size': 16, 'color': '#1E293B'}}, yaxis=dict(title='NPS (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'), xaxis=dict(showgrid=False), margin=dict(l=40, r=40, t=60, b=40), height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_line.update_layout(title={'text': "Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", 'font': {'size': 16, 'color': '#1E293B'}}, yaxis=dict(title='NPS (%)', showgrid=True, gridcolor='#E2E8F0'), xaxis=dict(showgrid=False), margin=dict(l=40, r=40, t=60, b=40), height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_line, use_container_width=True)
             else:
                 st.info("No hay suficientes datos históricos para generar el gráfico.")
@@ -572,7 +572,7 @@ with tab_carga:
                 motivos_data = []
                 for motivo in df_filtrado[col_q4].dropna().unique():
                     df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
-                    nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - Taller")
+                    nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - taller")
                     motivos_data.append({"Motivo": motivo, "Volumen": len(df_motivo), "NPS_Q2": nps_q2})
                     
                 if motifs_data := motivos_data:
@@ -878,6 +878,9 @@ with tab_prima:
     if anios_disponibles_prima:
         anio_prima_sel = st.selectbox("Seleccione Año para Evaluar la Prima:", options=anios_disponibles_prima, key="sb_anio_prima")
         
+        # Declaración global de la variable para corregir el NameError de visualización
+        es_filtro_2025 = (anio_prima_sel == 2025)
+        
         # Filtro de Marcas específico para acotar la auditoría de la prima
         marcas_prima_disponibles = sorted(df_marca_raw['Marca'].dropna().unique()) if 'Marca' in df_marca_raw.columns else ["PEUGEOT", "CITROEN"]
         marcas_prima_sel = st.multiselect("Filtrar por Marcas en la Prima:", options=marcas_prima_disponibles, default=marcas_prima_disponibles, key="ms_marcas_prima")
@@ -917,7 +920,7 @@ with tab_prima:
                 if 'Marca' in df_anio_marca_filtro.columns:
                     df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
             
-            # --- PARÁMETROS CRUZADOS 2025 VS 2026 BASADOS EN HISTÓRICOS Y "nuevos objetivos de 2025 mayo.png" ---
+            # Parámetros cruzados de cortes de escala temporales históricos
             es_escala_2025_post_mayo = (anio_prima_sel == 2025 and m_num >= 5)
             es_escala_2026_post_abril = (anio_prima_sel == 2026 and m_num >= 4)
             
@@ -998,17 +1001,17 @@ with tab_prima:
             total_encuestas_mes = len(df_mes_marca_filtro)
             ok_llave5 = (total_encuestas_mes >= meta_llave5_umbral)
             
-            # Estado del candado maestro (4 llaves activas)
+            # Cierre integral de candado maestro de llaves (4 llaves obligatorias)
             llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
             
-            # --- PROCESAMIENTO E INYECCIÓN DE OBJETIVOS SEGÚN CORTE TEMPORAL ---
+            # --- CÁLCULO INDEPENDIENTE DE DRIVERS CON ESCALAS DISCRIMINADAS POR MES ---
             monto_d1 = 0
             monto_d2 = 0
             monto_d3 = 0
             monto_d4 = 0
             
             if es_escala_2025_post_mayo:
-                # Datos cargados desde "nuevos objetivos de 2025 mayo.png"
+                # Estructura de Drivers y metas cargada en la imagen de 2025
                 if score_nps_mes >= 93.5: monto_d1 = 210000
                 elif score_nps_mes >= 89.8: monto_d1 = 160000
                 
@@ -1027,7 +1030,7 @@ with tab_prima:
                 max_teorico_unitario = 420000
                 labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amab. Asesor"]
             else:
-                # Estructura tradicional de escalas 2026
+                # Estructura del año 2026 (Escala vigente corregida por meses anteriores)
                 if not es_escala_2026_post_abril:
                     if score_nps_mes >= 93.5: monto_d1 = 270000
                     elif score_nps_mes >= 88.3: monto_d1 = 200000
@@ -1179,7 +1182,7 @@ with tab_prima:
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
             html_tabla += "</tr>"
             
-            # SECCIÓN DRIVERS (Adopta de forma automática las etiquetas generadas según el año seleccionado)
+            # SECCIÓN DRIVERS
             html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
             
             # Fila Driver 1
@@ -1213,7 +1216,7 @@ with tab_prima:
             html_tabla += "</tr>"
             
             html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
             html_tabla += "<tr style='color: #047857; background-color: #f0fdf4;'> layout_width: full;"
@@ -1231,8 +1234,9 @@ with tab_prima:
             html_tabla += "</tbody></table>"
             st.markdown(html_tabla, unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
+            st.info("💡 **Regla de Cierre:** El Bonus del 5% trimestral se calcula de forma automatizada e impacta directamente en las columnas de cierre de ciclo (Marzo y Junio).")
             
-            # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO DE ÁREAS (PLOTLY) ---
+            # --- 5. RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO DE ÁREAS (PLOTLY) ---
             if meses_grafico_nombres:
                 st.markdown("---")
                 st.markdown("#### 📈 Análisis de Eficiencia Económica: Ganancia vs. Pérdida del Sector")
