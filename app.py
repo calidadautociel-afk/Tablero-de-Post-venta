@@ -579,7 +579,7 @@ with tab_carga:
                     df_m = pd.DataFrame(motifs_data).sort_values(by="Volumen", ascending=True)
                     
                     fig_q4 = go.Figure()
-                    fig_q4.add_trace(go.Bar(y=df_m["Motivo"], x=df_m["Volumen"], orientation='h', marker=dict(color=df_m["NPS_Q2"], colorscale=[[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']]], cmin=0, cmax=100, colorbar=dict(title="NPS Q2")), text=df_m["Volumen"], textposition='auto', hovertemplate="<b>Motivo:</b> %{y}<br><b>Autos:</b> %{x}<br><b>NPS Recomendación:</b> %{marker.color:.1f}%<extra></extra>"))
+                    fig_q4.add_trace(go.Bar(y=df_m["Motivo"], x=df_m["Volumen"], orientation='h', marker=dict(color=df_m["NPS_Q2"], colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], cmin=0, cmax=100, colorbar=dict(title="NPS Q2")), text=df_m["Volumen"], textposition='auto', hovertemplate="<b>Motivo:</b> %{y}<br><b>Autos:</b> %{x}<br><b>NPS Recomendación:</b> %{marker.color:.1f}%<extra></extra>"))
                     fig_q4.update_layout(title="Volumen vs. NPS Recommendation", height=350 if len(df_m) > 3 else 250, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_q4, use_container_width=True)
                     
@@ -672,7 +672,7 @@ with tab_quejas:
                     
                 st.dataframe(df_detractores[columnas_queja], use_container_width=True, hide_index=True)
             else:
-                st.success("🎉 ¡Excelente! No se registraron clientes detractors para los filtros seleccionados.")
+                st.success("🎉 ¡Excelente! No se registraron clientes detractores para los filtros seleccionados.")
         else:
             st.info("Columnas de análisis de quejas no encontradas.")
 
@@ -906,10 +906,9 @@ with tab_prima:
         
         # Procesamiento dinámico mes a mes
         for m_num in meses_columnas:
-            # Filtro base del mes actual para contar encuestas y drivers
             df_mes_marca_base = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
             
-            # Filtro por marcas para las métricas si están seleccionadas
+            # Filtros de marca aplicados a las muestras
             df_mes_marca_filtro = df_mes_marca_base.copy()
             df_anio_marca_filtro = df_marca_anio.copy()
             if marcas_prima_sel:
@@ -918,26 +917,31 @@ with tab_prima:
                 if 'Marca' in df_anio_marca_filtro.columns:
                     df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
             
-            # Si el mes no tiene encuestas absolutas en este año, queda en blanco completo
+            # --- PARÁMETROS CRUZADOS 2025 VS 2026 BASADOS EN HISTÓRICOS Y "nuevos objetivos de 2025 mayo.png" ---
+            es_escala_2025_post_mayo = (anio_prima_sel == 2025 and m_num >= 5)
+            es_escala_2026_post_abril = (anio_prima_sel == 2026 and m_num >= 4)
+            
+            # Asignación dinámica de umbrales para las llaves de acceso (Se eliminó la Tasa de Respuesta)
+            meta_llave1_umbral = 80.5 if es_escala_2025_post_mayo else 77.0
+            meta_llave2_umbral = 88.0 if es_escala_2025_post_mayo else 86.3
+            meta_llave3_umbral = 80.0
+            meta_llave5_umbral = 8 if es_escala_2025_post_mayo else 10
+            
             if len(df_mes_marca_base) == 0:
+                monto_puro_liquidado[m_num] = 0
+                if es_escala_2026_post_abril: max_teorico_mes = 630000
+                elif es_escala_2025_post_mayo: max_teorico_mes = 420000
+                else: max_teorico_mes = 540000
+                max_teorico_acumulado[m_num] = max_teorico_mes * personas_declaradas
+                
                 line_data_prima.append({
                     "Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False,
-                    "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L4_Val": "-", "L4_OK": False, "L5_Val": "0", "L5_OK": False,
-                    "V_D1": "$0", "V_D2": "$0", "V_D3": "$0", "V_D4": "$0",
-                    "Suma_Drivers": "$0", "Pers": personas_declaradas, "Total_Financiero": "$0"
+                    "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False,
+                    "V_D1": 0, "V_D2": 0, "V_D3": 0, "V_D4": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0,
+                    "Es_2025": es_escala_2025_post_mayo, "Labels": ["🔹 Driver 1", "🔹 Driver 2", "🔹 Driver 3", "🔹 Driver 4"]
                 })
                 continue
                 
-            # --- DEFINICIÓN DINÁMICA DE REGLAS SEGÚN EL AÑO SELECCIONADO (2025 vs 2026) ---
-            # Evaluamos si estamos en la ventana de la nueva escala de 2025 (A partir de Mayo 2025 inclusive)
-            es_escala_2025_post_mayo = (anio_prima_sel == 2025 and m_num >= 5)
-            
-            # Asignación de metas mínimas de llaves
-            meta_llave1_umbral = 80.5 if es_escala_2025_post_mayo else 77.0
-            meta_llave2_umbral = 88.0 if es_escala_2025_post_mayo else 86.3
-            meta_llave3_umbral = 80.0 # Se mantiene igual en ambas estructuras
-            meta_llave5_umbral = 8 if es_escala_2025_post_mayo else 10
-            
             # --- LLAVE 1: CONTACTO POSTERIOR 6MM ---
             df_6mm_marca = df_anio_marca_filtro[(df_anio_marca_filtro['Mes_Num'] > (m_num - 6)) & (df_anio_marca_filtro['Mes_Num'] <= m_num)]
             tasa_6mm = 0.0
@@ -987,90 +991,52 @@ with tab_prima:
                                 tasas_lista.append(val_final)
                         if tasas_lista:
                             pct_mail_val = round(sum(tasas_lista) / len(tasas_lista), 1)
-                            ok_llave3 = (pct_mail_val >= meta_llave3_umbral)
+                            ok_llave3 = (pct_mail_val >= 80.0)
                             val_l3_display = f"{pct_mail_val}%"
-                            
-            # --- LLAVE 4: TASA DE RESPUESTA (EXCLUSIVA 2025 A PARTIR DE MAYO) ---
-            pct_respuesta_val = 0.0
-            ok_llave4 = False
-            val_l4_display = "-"
-            if es_escala_2025_post_mayo and not df_email_llave_raw.empty:
-                col_tasa_resp = next((c for c in df_email_llave_raw.columns if 'Tasa de Respuesta' in c), None)
-                col_mes_ext = next((c for c in df_email_llave_raw.columns if c.lower() == 'mes'), None)
-                if col_tasa_resp and col_mes_ext:
-                    df_row_resp = df_email_llave_raw[df_email_llave_raw[col_mes_ext].astype(str).str.strip().str.lower() == string_mes_buscar.lower()]
-                    if marcas_prima_sel and col_marca_ext:
-                        marcas_en_hoja = [m.lower() for m in marcas_prima_sel]
-                        df_row_resp = df_row_resp[df_row_resp[col_marca_ext].astype(str).str.strip().str.lower().isin(marcas_en_hoja)]
-                    if not df_row_resp.empty:
-                        resp_lista = []
-                        for _, row_r in df_row_resp.iterrows():
-                            val_raw = row_r[col_tasa_resp]
-                            if isinstance(val_raw, str):
-                                val_raw = val_raw.replace('%', '').replace(',', '.').strip()
-                            num_parsed = pd.to_numeric(val_raw, errors='coerce')
-                            if pd.notnull(num_parsed):
-                                val_final = num_parsed if num_parsed > 1.0 else num_parsed * 100
-                                resp_lista.append(val_final)
-                        if resp_lista:
-                            pct_respuesta_val = round(sum(resp_lista) / len(resp_lista), 1)
-                            ok_llave4 = (pct_respuesta_val >= 15.0)
-                            val_l4_display = f"{pct_respuesta_val}%"
-            else:
-                ok_llave4 = True # Para que no bloquee las escalas 2026
             
-            # --- LLAVE 5: MUESTRA MÍNIMA MENSAL ---
+            # --- LLAVE 5: MUESTRA MÍNIMA ---
             total_encuestas_mes = len(df_mes_marca_filtro)
             ok_llave5 = (total_encuestas_mes >= meta_llave5_umbral)
             
-            # Cierre integral de candado maestro de llaves
-            llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave4 and ok_llave5
+            # Estado del candado maestro (4 llaves activas)
+            llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
             
-            # --- CÁLCULO MODULAR DE LOS 4 DRIVERS SEGÚN PERÍODOS (2025 vs 2026) ---
+            # --- PROCESAMIENTO E INYECCIÓN DE OBJETIVOS SEGÚN CORTE TEMPORAL ---
             monto_d1 = 0
             monto_d2 = 0
             monto_d3 = 0
             monto_d4 = 0
             
             if es_escala_2025_post_mayo:
-                # Estructura de Drivers y metas cargada en la imagen de 2025
-                # Driver 1: Recomendación (Q2) - Escala 2025
+                # Datos cargados desde "nuevos objetivos de 2025 mayo.png"
                 if score_nps_mes >= 93.5: monto_d1 = 210000
                 elif score_nps_mes >= 89.8: monto_d1 = 160000
                 
-                # Driver 2: Q11 Explicación Trabajo y Costo
                 score_q11, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")
                 if score_q11 >= 94.0: monto_d2 = 105000
                 elif score_q11 >= 89.3: monto_d2 = 80000
                 
-                # Driver 3: Q8 Competencia Asesor de Servicio
                 score_q8, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q8 - Competencia Asesor de Servicio")
                 if score_q8 >= 95.5: monto_d3 = 52500
                 elif score_q8 >= 93.3: monto_d3 = 40000
                 
-                # Driver 4: Q7 Cortesía y Amabilidad
                 score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
                 if score_q7 >= 95.5: monto_d4 = 52500
                 elif score_q7 >= 93.3: monto_d4 = 40000
                 
                 max_teorico_unitario = 420000
-                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amabilidad"]
+                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amab. Asesor"]
             else:
-                # Estructura del año 2026 (Escala vigente corregida por meses anteriores)
-                es_2026_nueva = (anio_prima_sel == 2026 and m_num >= 4)
-                
-                if not es_2026_nueva:
+                # Estructura tradicional de escalas 2026
+                if not es_escala_2026_post_abril:
                     if score_nps_mes >= 93.5: monto_d1 = 270000
                     elif score_nps_mes >= 88.3: monto_d1 = 200000
-                    
                     score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
                     if score_q12 >= 94.0: monto_d2 = 150000
                     elif score_q12 >= 87.8: monto_d2 = 120000
-                    
                     score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
                     if score_q7 >= 95.5: monto_d3 = 60000
                     elif score_q7 >= 91.8: monto_d3 = 40000
-                    
                     score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
                     if score_q19 >= 95.5: monto_d4 = 60000
                     elif score_q19 >= 91.8: monto_d4 = 40000
@@ -1078,15 +1044,12 @@ with tab_prima:
                 else:
                     if score_nps_mes >= 93.5: monto_d1 = 310000
                     elif score_nps_mes >= 88.3: monto_d1 = 230000
-                    
                     score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
                     if score_q12 >= 94.0: monto_d2 = 160000
                     elif score_q12 >= 87.8: monto_d2 = 140000
-                    
                     score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
                     if score_q7 >= 95.5: monto_d3 = 80000
                     elif score_q7 >= 91.8: monto_d3 = 50000
-                    
                     score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
                     if score_q19 >= 95.5: monto_d4 = 80000
                     elif score_q19 >= 91.8: monto_d4 = 50000
@@ -1105,7 +1068,7 @@ with tab_prima:
                 "L1_Val": val_l1_display, "L1_OK": ok_llave1,
                 "L2_Val": f"{score_nps_mes}%", "L2_OK": ok_llave2,
                 "L3_Val": val_l3_display, "L3_OK": ok_llave3,
-                "L4_Val": val_l4_display, "L4_OK": ok_llave4, "Es_2025": es_escala_2025_post_mayo,
+                "Es_2025": es_escala_2025_post_mayo,
                 "L5_Val": str(total_encuestas_mes), "L5_OK": ok_llave5,
                 "V_D1": monto_d1, "V_D2": monto_d2, "V_D3": monto_d3, "V_D4": monto_d4,
                 "Suma_D_M": suma_drivers_mes, "Pers": personas_declaradas, "Liq_S_M": total_liq_sector_mes,
@@ -1133,7 +1096,7 @@ with tab_prima:
                     df_trim_encuestas = df_trim_encuestas[df_trim_encuestas['Marca'].isin(marcas_prima_sel)]
                     
                 if len(df_trim_encuestas) > 0 and d["Es_2025"]:
-                    # Lógica específica de candado trimestral para la escala 2025
+                    # Candado Trimestral Escala 2025 basado en "nuevos objetivos de 2025 mayo.png"
                     nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
                     nps_trim_q11, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q11 - Explicación trabajo - costo")
                     nps_trim_q8, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q8 - Competencia Asesor de Servicio")
@@ -1143,7 +1106,7 @@ with tab_prima:
                         suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
                         monto_bonus_trimestral = round(suma_primas_puras_trim * 0.05, 0)
                 elif len(df_trim_encuestas) > 0:
-                    # Lógica de candado trimestral para escalas 2026
+                    # Candado Trimestral Escala Estándar 2026
                     nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
                     nps_trim_q12, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q12 - Calidad del trabajo")
                     nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
@@ -1168,9 +1131,6 @@ with tab_prima:
 
         # --- GENERACIÓN DE LA MATRIZ DINÁMICA EN HTML ---
         if lista_render_completa:
-            # Determinamos los encabezados de forma dinámica según el año activo
-            es_filtro_2025 = (anio_prima_sel == 2025)
-            
             html_tabla = """
             <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
                 <thead>
@@ -1209,17 +1169,8 @@ with tab_prima:
                 if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
             html_tabla += "</tr>"
-            
-            # Fila Llave 4: Solo se visualiza relevante si es 2025
-            if es_filtro_2025:
-                html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>📩 Tasa de Respuesta (Meta &ge; 15%)</td>"
-                for d in lista_render_completa:
-                    bg = "#D4EDDA; color: #155724;" if d["L4_OK"] else "#F8D7DA; color: #721C24;"
-                    if d["L4_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                    html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L4_Val']}</td>"
-                html_tabla += "</tr>"
                 
-            # Fila Llave Muestra Mínima (Llave 5 en 2025, Llave 4 en 2026)
+            # Fila Llave Muestra Mínima
             lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
             html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
             for d in lista_render_completa:
@@ -1228,7 +1179,7 @@ with tab_prima:
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
             html_tabla += "</tr>"
             
-            # SECCIÓN DRIVERS (Los nombres de las celdas se adaptan según el diccionario de etiquetas generado en el bucle)
+            # SECCIÓN DRIVERS (Adopta de forma automática las etiquetas generadas según el año seleccionado)
             html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
             
             # Fila Driver 1
@@ -1262,10 +1213,10 @@ with tab_prima:
             html_tabla += "</tr>"
             
             html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            html_tabla += "<tr style='color: #047857; background-color: #f0fdf4;'>"
+            html_tabla += "<tr style='color: #047857; background-color: #f0fdf4;'> layout_width: full;"
             html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral Adicional (5%)</td>"
             for d in lista_render_completa:
                 str_b = f"${d['Bonus_5']:,.0f}" if d["Bonus_5"] > 0 else "-"
