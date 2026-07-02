@@ -56,6 +56,12 @@ MESES_ES = {
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
 
+# Mapeo de meses en formato corto (para coincidencia exacta con "ene 2026")
+MESES_SHORT = {
+    1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
+    7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
+}
+
 # --- INICIALIZACIÓN DE SESSION STATE (DOBLE) ---
 if 'filtro_comentarios_marca' not in st.session_state:
     st.session_state.filtro_comentarios_marca = 'Todos'
@@ -284,7 +290,8 @@ with tab_monitor:
             with subtab_taller:
                 c1, c2, c3 = st.columns(3)
                 with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q12 - Calidad del trabajo")[0], "Q12 - Calidad", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_torta(df_filtrado, "Q13 - Trabajo realizado en primera visita", "Q13 - FIR"), use_container_width=True)
+                # Utiliza col_q13 para evitar desajustes en la base de Marca
+                with c2: st.plotly_chart(crear_torta(df_filtrado, col_q13, "Q13 - FIR"), use_container_width=True)
                 with c3: st.plotly_chart(crear_torta(df_filtrado, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
             with subtab_contacto:
                 st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
@@ -319,16 +326,6 @@ with tab_monitor:
                 with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "7-Limpieza del vehículo")[0], "7-Limpieza", mini=True), use_container_width=True)
             with subtab_contacto_int:
                 st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
-
-    # --- CSS botones P/N/D Global ---
-    st.markdown("""
-        <style>
-        button[kind="secondary"] { background-color: transparent; }
-        div[data-testid="stVerticalBlock"] div:nth-child(1) > div > button { background-color: #D4EDDA; color: #155724; border-color: #C3E6CB;}
-        div[data-testid="stVerticalBlock"] div:nth-child(2) > div > button { background-color: #FFF3CD; color: #856404; border-color: #FFEEBA;}
-        div[data-testid="stVerticalBlock"] div:nth-child(3) > div > button { background-color: #F8D7DA; color: #721C24; border-color: #F5C6CB;}
-        </style>
-    """, unsafe_allow_html=True)
 
     # === TABLA GLOBAL DE COMENTARIOS DOBLE (RECUADROS) ===
     st.markdown("---")
@@ -412,7 +409,7 @@ with tab_tabla:
             
             for p_asesor in asesores:
                 df_ase = df_filtrado[df_filtrado[col_asesor_key] == p_asesor]
-                nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recommendation - taller")
+                nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
                 nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
                 nps_q8, _, _, _ = calcular_metricas_nps(df_ase, "Q8 - Competencia Asesor de Servicio")
                 nps_q10, _, _, _ = calcular_metricas_nps(df_ase, "Q10 - Explicación presupuesto")
@@ -539,7 +536,7 @@ with tab_ficha:
                 chart_data.append({
                     "Periodo": f"{mes_nombre} {año}",
                     "Orden": año * 100 + mes_num, 
-                    "NPS_Marca": Math.get((año, mes_num), None) if 'Math' in globals() else hist_data_m.get((año, mes_num), None),
+                    "NPS_Marca": hist_data_m.get((año, mes_num), None),
                     "NPS_Interna": hist_data_i.get((año, mes_num), None),
                     "NPS_Global": global_nps.get((año, mes_num), None)
                 })
@@ -886,23 +883,29 @@ with tab_prima:
         marcas_prima_disponibles = sorted(df_marca_raw['Marca'].dropna().unique()) if 'Marca' in df_marca_raw.columns else ["PEUGEOT", "CITROEN"]
         marcas_prima_sel = st.multiselect("Filtrar por Marcas en la Prima:", options=marcas_prima_disponibles, default=marcas_prima_disponibles, key="ms_marcas_prima")
         
-        # Procesar datos base filtrados por año y marcas seleccionadas
+        # Procesar datos base filtrados por año
         df_marca_anio = df_marca_raw[df_marca_raw['Año'] == anio_prima_sel]
         
-        if marcas_prima_sel:
-            if 'Marca' in df_marca_anio.columns:
-                df_marca_anio = df_marca_anio[df_marca_anio['Marca'].isin(marcas_prima_sel)]
-                
         # Estructurar la matriz de meses (1 al 12) para armar las columnas
         meses_columnas = list(range(1, 13))
         line_data_prima = []
         
         # Procesamiento dinámico mes a mes
         for m_num in meses_columnas:
-            df_mes_marca = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
+            # Filtro base del mes actual para contar encuestas
+            df_mes_marca_base = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
             
-            # Si el mes no tiene encuestas absolutas en este año, renderizamos indicadores limpios en vacío
-            if len(df_mes_marca) == 0:
+            # Filtro por marcas para las llaves 1, 2 y 4 si están seleccionadas
+            df_mes_marca_filtro = df_mes_marca_base.copy()
+            df_anio_marca_filtro = df_marca_anio.copy()
+            if marcas_prima_sel:
+                if 'Marca' in df_mes_marca_filtro.columns:
+                    df_mes_marca_filtro = df_mes_marca_filtro[df_mes_marca_filtro['Marca'].isin(marcas_prima_sel)]
+                if 'Marca' in df_anio_marca_filtro.columns:
+                    df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
+            
+            # Si el mes no tiene encuestas en la base original para este año, queda en blanco
+            if len(df_mes_marca_base) == 0:
                 line_data_prima.append({
                     "Mes_Nombre": MESES_ES[m_num],
                     "L1_Val": "-", "L1_OK": False,
@@ -913,10 +916,10 @@ with tab_prima:
                 continue
                 
             # ==============================================================================
-            # LLAVE 1: CONTACTO POSTERIOR 6MM (Meta >= 77% - Ventana Móvil Corregida de 6 Meses)
+            # LLAVE 1: CONTACTO POSTERIOR 6MM (Meta >= 77% - Ventana Móvil de 6 Meses Sin Vacíos)
             # ==============================================================================
             # Filtramos la base completa del año actual para la ventana móvil (mes actual y 5 anteriores)
-            df_6mm_marca = df_marca_anio[(df_marca_anio['Mes_Num'] > (m_num - 6)) & (df_marca_anio['Mes_Num'] <= m_num)]
+            df_6mm_marca = df_anio_marca_filtro[(df_anio_marca_filtro['Mes_Num'] > (m_num - 6)) & (df_anio_marca_filtro['Mes_Num'] <= m_num)]
             
             tasa_6mm = 0.0
             ok_llave1 = False
@@ -925,7 +928,7 @@ with tab_prima:
             if "Q18 - Contactado" in df_6mm_marca.columns:
                 serie_q18 = df_6mm_marca["Q18 - Contactado"].astype(str).str.strip()
                 
-                # Contamos exclusivamente los "Sí" y "No" reales, dejando fuera los vacíos/nulos por completo
+                # Numerador: "Sí" con o sin tilde. Denominador: "Sí" + "No". Celdas vacías excluidas.
                 cant_si = len(serie_q18[serie_q18.str.lower() == 'sí']) + len(serie_q18[serie_q18.str.lower() == 'si'])
                 cant_no = len(serie_q18[serie_q18.str.lower() == 'no'])
                 total_validos_6mm = cant_si + cant_no
@@ -938,16 +941,19 @@ with tab_prima:
             # ==============================================================================
             # LLAVE 2: NPS MÍNIMO GLOBAL (Meta >= 86.3% - Mes Actual)
             # ==============================================================================
-            score_nps_mes, _, _, _ = calcular_metricas_nps(df_mes_marca, "Q2 - Recomendación - taller")
+            score_nps_mes, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")
             ok_llave2 = (score_nps_mes >= 86.3)
             
             # ==============================================================================
-            # LLAVE 3: TASA DE MAIL VÁLIDO (Meta >= 80% - Hoja Externa Cruzada por Mes y Marca)
+            # LLAVE 3: TASA DE MAIL VÁLIDO (Meta >= 80% - Hoja Externa "ene 2026")
             # ==============================================================================
             pct_mail_val = 0.0
             ok_llave3 = False
             val_l3_display = "-"
-            nombre_mes_buscar = MESES_ES[m_num]
+            
+            # Convertimos las variables al formato exacto de tu hoja externa (ej: "ene 2026")
+            mes_abreviado = MESES_SHORT[m_num]
+            string_mes_buscar = f"{mes_abreviado} {anio_prima_sel}"
             
             if not df_email_llave_raw.empty:
                 col_tasa_mail = next((c for c in df_email_llave_raw.columns if 'Tasa de Email Utilizable' in c), None)
@@ -955,24 +961,24 @@ with tab_prima:
                 col_marca_ext = next((c for c in df_email_llave_raw.columns if c.lower() == 'marca'), None)
                 
                 if col_tasa_mail and col_mes_ext:
-                    # Filtrar por correspondencia del mes actual y año actual
-                    df_row_mail = df_email_llave_raw[df_email_llave_raw[col_mes_ext].astype(str).str.strip().str.lower() == nombre_mes_buscar.lower()]
+                    # Buscamos la coincidencia exacta de la cadena "ene 2026"
+                    df_row_mail = df_email_llave_raw[df_email_llave_raw[col_mes_ext].astype(str).str.strip().str.lower() == string_mes_buscar.lower()]
                     
-                    # Si hay marcas seleccionadas en el widget interno, cruzamos por marcas correspondientes
+                    # Filtramos por las marcas seleccionadas adaptándolas a minúsculas
                     if marcas_prima_sel and col_marca_ext:
                         marcas_en_hoja = [m.lower() for m in marcas_prima_sel]
                         df_row_mail = df_row_mail[df_row_mail[col_marca_ext].astype(str).str.strip().str.lower().isin(marcas_en_hoja)]
                         
                     if not df_row_mail.empty:
-                        # Calculamos el promedio de las tasas si hay más de una fila que coincide (ej. Peugeot + Citroen juntas)
                         tasas_lista = []
                         for _, row in df_row_mail.iterrows():
                             val_raw = row[col_tasa_mail]
                             if isinstance(val_raw, str):
+                                # Reemplazo de comas por puntos decimales y limpieza de símbolos
                                 val_raw = val_raw.replace('%', '').replace(',', '.').strip()
                             num_parsed = pd.to_numeric(val_raw, errors='coerce')
                             if pd.notnull(num_parsed):
-                                # Estandarizar si el número viene en base decimal o porcentual directa
+                                # Si viene como entero (90.9) lo deja, si viene como decimal (0.909) lo multiplica por 100
                                 val_final = num_parsed if num_parsed > 1.0 else num_parsed * 100
                                 tasas_lista.append(val_final)
                                 
@@ -984,10 +990,10 @@ with tab_prima:
             # ==============================================================================
             # LLAVE 4: MUESTRA MÍNIMA DE ENCUESTAS (Meta >= 10 - Mes Actual)
             # ==============================================================================
-            total_encuestas_mes = len(df_mes_marca)
+            total_encuestas_mes = len(df_mes_marca_filtro)
             ok_llave4 = (total_encuestas_mes >= 10)
             
-            # Guardar resultados procesados del mes analizado
+            # Guardar resultados consolidados
             line_data_prima.append({
                 "Mes_Nombre": MESES_ES[m_num],
                 "L1_Val": val_l1_display, "L1_OK": ok_llave1,
