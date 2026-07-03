@@ -189,7 +189,7 @@ def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
 def crear_torta(df, columna, titulo):
     if columna not in df.columns:
         fig = go.Figure()
-        fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, height=160, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.85, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, height=160, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         return fig
         
     datos = df[columna].value_counts()
@@ -920,7 +920,7 @@ with tab_prima:
                 if 'Marca' in df_anio_marca_filtro.columns:
                     df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
             
-            # Condicional de corte de escala temporal e históricos (2025 vs 2026)
+            # Condicional de corte de escala temporal e históricos
             es_escala_2025_post_mayo = (anio_prima_sel == 2025 and m_num >= 5)
             es_escala_2026_post_abril = (anio_prima_sel == 2026 and m_num >= 4)
             
@@ -932,6 +932,7 @@ with tab_prima:
                 monto_puro_liquidado[m_num] = 0
                 max_t_unit = 630000 if es_escala_2026_post_abril else (420000 if es_escala_2025_post_mayo else 540000)
                 max_teorico_acumulado[m_num] = max_t_unit * personas_declaradas
+                
                 line_data_prima.append({
                     "Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False,
                     "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False,
@@ -1017,7 +1018,7 @@ with tab_prima:
                 if score_q7 >= 95.5: monto_d4 = 52500
                 elif score_q7 >= 93.3: monto_d4 = 40000
                 max_teorico_unitario = 420000
-                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amabilidad"]
+                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amab. Asesor"]
             else:
                 if not es_escala_2026_post_abril:
                     if score_nps_mes >= 93.5: monto_d1 = 270000
@@ -1043,7 +1044,7 @@ with tab_prima:
                     elif score_q7 >= 91.8: monto_d3 = 50000
                     score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
                     if score_q19 >= 95.5: monto_d4 = 80000
-                    elif score_q19 >= 91.8: font_s_v = monto_d4 = 50000
+                    elif score_q19 >= 91.8: monto_d4 = 50000
                     max_teorico_unitario = 630000
                 labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad de Trabajo", "🔹 Q7 Cortesía y Amabilidad", "🔹 Q19 Satisfacción de Contacto"]
                 
@@ -1065,7 +1066,7 @@ with tab_prima:
                 "Labels": labels_drivers
             })
 
-        # --- EVALUACIÓN TRIMESTRAL DEL BONUS DEL 5% CON CANDADO CONSOLIDADO ---
+        # --- CONSOLIDACIÓN FINAL E INYECCIÓN DE ALERTAS PREDICTIVAS ---
         lista_render_completa = []
         for d in line_data_prima:
             m = d["Mes_Num"]
@@ -1115,15 +1116,15 @@ with tab_prima:
                         color_bonus_html = "background-color: #FFF5F5; color: #E53E3E; font-size: 11px; font-weight: bold;"
 
             final_recalculado_mes = d["Liq_S_M"] + monto_bonus_trimestral
-            final_recalculado_acumulado[m] = final_recalculado_mes
+            perdida_mes_calc = max(0, max_teorico_acumulado[m] - final_recalculado_mes)
             pct_cumplimiento = round((d["Liq_S_M"] / max_teorico_acumulado[m] * 100), 1) if max_teorico_acumulado[m] > 0 else 0.0
             
             lista_render_completa.append({
                 **d, "Bonus_Display": str_bonus_display, "Color_B_Style": color_bonus_html, 
-                "Pct_Cumpl": pct_cumplimiento, "Final_M": final_recalculado_mes
+                "Pct_Cumpl": pct_cumplimiento, "Final_M": final_recalculado_mes, "Perdida_M": perdida_mes_calc
             })
 
-        # Renderizado de la matriz HTML
+        # Renderizado de la tabla principal HTML
         if lista_render_completa:
             html_tabla = """
             <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
@@ -1197,7 +1198,7 @@ with tab_prima:
             for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
             html_tabla += "</tr>"
             
-            html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'> "
+            html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'>"
             html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral (5%) [Predictivo]</td>"
             for d in lista_render_completa:
                 html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
@@ -1213,12 +1214,13 @@ with tab_prima:
             st.markdown("<br>", unsafe_allow_html=True)
             
             # ==============================================================================
-            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES (CON 4 TARJETA ORDENADA)
+            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES (CON LA 4TA TARJETA ORDENADA)
             # ==============================================================================
             st.markdown("---")
             st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
             st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje de las transferencias de la marca, utiliza estos selectores para auditar los cobros reales.</p>", unsafe_allow_html=True)
             
+            # Cálculo Automático a 45 días del mes cobrado por defecto
             fecha_actual = datetime.date.today()
             fecha_cobro = fecha_actual - datetime.timedelta(days=45)
             mes_default_nombre = MESES_ES.get(fecha_cobro.month, "Enero")
@@ -1246,7 +1248,7 @@ with tab_prima:
                 if d["L1_Val"] != "-": 
                     final_mes = d["Final_M"]
                     max_teorico = max_teorico_acumulado.get(d["Mes_Num"], 0)
-                    perdida_mes_calc = max(0, max_teorico - final_mes)
+                    perdida_mes_calc = d["Perdida_M"]
                     
                     if d["Mes_Nombre"] in meses_caja_sel:
                         monto_cobrado_efectivo += final_mes
@@ -1311,7 +1313,7 @@ with tab_prima:
                     </div>
                 """, unsafe_allow_html=True)
             
-            # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON SOMBREO INDEPENDIENTE DE ÁREAS CORREGIDO ---
+            # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON ÁREAS SOWBREADAS CONTINUAS ---
             if meses_grafico_nombres:
                 st.markdown("<br>", unsafe_allow_html=True)
                 fig_econ = go.Figure()
@@ -1325,7 +1327,7 @@ with tab_prima:
                     text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
                     textposition='top center',
                     fill='tozeroy',
-                    fillcolor='rgba(34, 197, 94, 0.25)', # Verde Claro
+                    fillcolor='rgba(34, 197, 94, 0.25)', # Verde Claro traslúcido
                     hovertemplate='<b>%{x}</b><br>Alcanzado: %{y:$,.0f}<extra></extra>'
                 ))
                 
@@ -1344,7 +1346,7 @@ with tab_prima:
                     line=dict(color='#EF4444', width=2),
                     marker=dict(size=6, color='#EF4444'),
                     fill='tozeroy',
-                    fillcolor='rgba(239, 68, 68, 0.22)', # Rojo Claro por debajo de la pérdida
+                    fillcolor='rgba(239, 68, 68, 0.22)', # Rojo Claro traslúcido por debajo
                     hovertemplate='<b>%{x}</b><br>Pérdida Nominal: %{y:$,.0f}<extra></extra>'
                 ))
                 
