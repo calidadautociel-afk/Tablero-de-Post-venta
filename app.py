@@ -25,31 +25,42 @@ st.markdown("""
     div.stButton > button:hover { opacity: 0.8; border-color: #1E293B; }
     .vertical-divider { border-left: 2px solid #E2E8F0; height: 100%; margin-left: 10px; margin-right: 10px; }
     
-    /* ======================================================= */
-    /* MAGIA PARA ROMPER EL SCROLL DE STREAMLIT E IMPRIMIR PDF */
-    /* ======================================================= */
+    /* ================================================================= */
+    /* CSS DEFINITIVO PARA ROMPER EL SCROLL DE STREAMLIT AL IMPRIMIR     */
+    /* ================================================================= */
     @media print {
-        .no-print { display: none !important; }
-        
-        /* 1. Ocultamos la barra lateral gris y el menú superior de Streamlit */
-        [data-testid="stSidebar"] { display: none !important; }
-        [data-testid="stHeader"] { display: none !important; }
-        [data-testid="stToolbar"] { display: none !important; }
-        
-        /* 2. Forzamos a Streamlit a mostrar todo el alto del documento sin recortarlo */
-        html, body, .stApp, .main, .block-container, [data-testid="stVerticalBlock"] {
-            overflow: visible !important;
-            height: auto !important;
-            max-height: none !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            position: relative !important;
+        /* Forzar impresion de colores reales de Plotly en Chrome */
+        * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }
+
+        /* Ocultar barra lateral y encabezados grises */
+        .no-print, [data-testid="stSidebar"], [data-testid="stHeader"], header, footer { 
+            display: none !important; 
         }
         
-        /* 3. Ajustamos la hoja de impresión */
-        @page { 
-            margin: 1cm; 
-            size: A4 portrait;
+        /* Destruir TODAS las cajas restrictivas de Streamlit */
+        html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], .main, .block-container {
+            display: block !important;
+            height: auto !important;
+            min-height: 100% !important;
+            max-height: none !important;
+            overflow: visible !important;
+            position: static !important;
+        }
+        
+        /* Expandir a lo ancho de la hoja */
+        .block-container {
+            max-width: 100% !important;
+            width: 100% !important;
+            padding: 0 !important;
+        }
+
+        /* Evitar que los graficos se corten por la mitad al cambiar de hoja */
+        div[data-testid="stVerticalBlock"] > div, .js-plotly-plot, .stDataFrame {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
         }
     }
     </style>
