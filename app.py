@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import math
 import datetime
 from fpdf import FPDF
+import io
 
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
@@ -201,7 +202,7 @@ def crear_torta(df, columna, titulo):
         margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     return fig
-# --- FUNCIÓN GENERADORA DE REPORTE PDF ---
+# --- FUNCIÓN GENERADORA DE REPORTE PDF (CON GRÁFICOS) ---
 def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -223,25 +224,53 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(6)
     
-    # --- SECCIÓN 1: MONITOR GLOBAL ---
+    # --- SECCIÓN 1: MONITOR GLOBAL (CON GRÁFICOS) ---
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(37, 99, 235) # Azul oficial
-    pdf.cell(0, 8, "1. Monitor Global (Metricas Clave)", ln=True)
+    pdf.cell(0, 8, "1. Monitor Global Comparativo", ln=True)
     pdf.ln(2)
     
-    # Cálculos dinámicos utilizando tus funciones existentes
-    score_q1, _, _, _ = calcular_metricas_nps(df_m, "Q1 - Satisfacción general")
-    score_q2, _, _, _ = calcular_metricas_nps(df_m, "Q2 - Recomendación - taller")
+    # Cálculos de métricas
+    score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_m, "Q1 - Satisfacción general")
+    score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_m, "Q2 - Recomendación - taller")
     prom_int = calcular_promedio(df_i, "Promedio")
-    score_int_nps, _, _, _ = calcular_metricas_nps(df_i, "1-NPS")
+    score_int_nps, p_i, n_i, d_i = calcular_metricas_nps(df_i, "1-NPS")
     
-    pdf.set_font("Helvetica", "", 10)
-    pdf.set_text_color(15, 23, 42)
-    pdf.cell(95, 8, f" NPS Q1 (Satisfaccion General - Marca): {score_q1}%", border=1)
-    pdf.cell(95, 8, f" NPS Q2 (Recomendacion - Marca): {score_q2}%", border=1, ln=True)
-    pdf.cell(95, 8, f" Satisfaccion Promedio (Interna): {prom_int}%", border=1)
-    pdf.cell(95, 8, f" NPS Recomendacion (Interna): {score_int_nps}%", border=1, ln=True)
-    pdf.ln(6)
+    # Generar gráficos en memoria
+    fig_q1 = crear_velocimetro(score_q1, "SATISFACCION MARCA")
+    fig_q2 = crear_velocimetro(score_q2, "RECOMENDACION MARCA")
+    fig_int_prom = crear_velocimetro(prom_int, "SATISFACCION INTERNA", is_promedio=True)
+    fig_int_nps = crear_velocimetro(score_int_nps, "RECOMENDACION INTERNA")
+    
+    # Transformar a imágenes (PNG)
+    img_q1 = io.BytesIO(fig_q1.to_image(format="png", width=400, height=250))
+    img_q2 = io.BytesIO(fig_q2.to_image(format="png", width=400, height=250))
+    img_int_prom = io.BytesIO(fig_int_prom.to_image(format="png", width=400, height=250))
+    img_int_nps = io.BytesIO(fig_int_nps.to_image(format="png", width=400, height=250))
+    
+    # Insertar Fila 1 de imágenes (Marca)
+    y_actual = pdf.get_y()
+    pdf.image(img_q1, x=15, y=y_actual, w=85)
+    pdf.image(img_q2, x=105, y=y_actual, w=85)
+    pdf.ln(50) # Bajar el cursor debajo de las imágenes
+    
+    # Info de Muestra Fila 1
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(90, 5, f"Muestra: {p_q1+n_q1+d_q1} | Prom: {p_q1} | Neu: {n_q1} | Det: {d_q1}", align="C")
+    pdf.cell(90, 5, f"Muestra: {p_q2+n_q2+d_q2} | Prom: {p_q2} | Neu: {n_q2} | Det: {d_q2}", align="C", ln=True)
+    pdf.ln(5)
+
+    # Insertar Fila 2 de imágenes (Interna)
+    y_actual = pdf.get_y()
+    pdf.image(img_int_prom, x=15, y=y_actual, w=85)
+    pdf.image(img_int_nps, x=105, y=y_actual, w=85)
+    pdf.ln(50)
+    
+    # Info de Muestra Fila 2
+    pdf.cell(90, 5, "Promedio s/ encuestas", align="C")
+    pdf.cell(90, 5, f"Muestra: {p_i+n_i+d_i} | Prom: {p_i} | Neu: {n_i} | Det: {d_i}", align="C", ln=True)
+    pdf.ln(10)
     
     # --- SECCIÓN 2: RANKING OFICIAL DE ASESORES ---
     pdf.set_font("Helvetica", "B", 13)
@@ -251,7 +280,6 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
     
     col_asesor_key = next((col for col in df_m.columns if 'Asesor' in col), None)
     if col_asesor_key:
-        # Encabezado de la Tabla
         pdf.set_font("Helvetica", "B", 9)
         pdf.set_fill_color(30, 41, 59)
         pdf.set_text_color(255, 255, 255)
@@ -264,7 +292,6 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(15, 23, 42)
         
-        # Procesamiento en lote para el PDF
         for p_asesor in df_m[col_asesor_key].dropna().unique():
             df_ase = df_m[df_m[col_asesor_key] == p_asesor]
             nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
@@ -275,7 +302,7 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
                 meta_str = "Alcanzado"
             elif t_validos > 0:
                 faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
-                meta_str = f"Faltan {max(0, faltantes)} Promotores"
+                meta_str = f"Faltan {max(0, faltantes)} Prom."
             else:
                 meta_str = "Sin datos"
                 
@@ -284,16 +311,13 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
             pdf.cell(28, 7, f"{nps_q2}%", border=1, align="C")
             pdf.cell(28, 7, f"{nps_q7}%", border=1, align="C")
             pdf.cell(61, 7, meta_str, border=1, align="C", ln=True)
-    else:
-        pdf.set_font("Helvetica", "I", 10)
-        pdf.cell(0, 7, "No se encontro columna de asesores en la base activa.", ln=True)
-        
+    
     pdf.ln(6)
     
     # --- SECCIÓN 3: ALERTAS DE QUEJAS ---
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(219, 68, 68) # Rojo de alerta
-    pdf.cell(0, 8, "3. Alertas Detractoras Recientes (Satisfaccion/Recomendacion <= 6)", ln=True)
+    pdf.cell(0, 8, "3. Alertas Detractoras Recientes (<= 6)", ln=True)
     pdf.ln(2)
     
     pdf.set_font("Helvetica", "", 9)
@@ -307,17 +331,18 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
         if len(df_detractores) > 0:
             contador = 0
             for idx, row in df_detractores.iterrows():
-                if contador >= 8: # Límite de seguridad para que no se haga infinito el PDF
-                    pdf.cell(0, 6, "... Existen mas alertas registradas en la plataforma web ...", ln=True, align="C")
+                if contador >= 6:
+                    pdf.cell(0, 6, "... Existen mas alertas en la plataforma web ...", ln=True, align="C")
                     break
-                verb = str(row.get("Q3 - Verbalización", "Sin comentarios registrados.")).replace("\n", " ").strip()
+                verb = str(row.get("Q3 - Verbalización", "Sin comentarios")).replace("\n", " ").strip()
+                if verb == "nan" or verb == "": verb = "Sin comentarios registrados."
                 ase_name = str(row.get(col_asesor_key, "N/A"))
-                pdf.multi_cell(0, 5, f"- Asesor: {ase_name} | Q1: {row.get('Q1 - Satisfacción general')} | Q2: {row.get('Q2 - Recomendación - taller')}\n  Comentario: {verb[:160]}", border='B')
+                pdf.multi_cell(0, 5, f"- Asesor: {ase_name} | Q1: {row.get('Q1 - Satisfacción general')} | Q2: {row.get('Q2 - Recomendación - taller')}\n  Comentario: {verb[:150]}", border='B')
                 pdf.ln(1)
                 contador += 1
         else:
             pdf.set_text_color(34, 197, 94)
-            pdf.cell(0, 7, "Excelente: No se detectan clientes detractores con los filtros aplicados.", ln=True)
+            pdf.cell(0, 7, "Excelente: No se detectan clientes detractores.", ln=True)
             
     return bytes(pdf.output())   
 # ==============================================================================
