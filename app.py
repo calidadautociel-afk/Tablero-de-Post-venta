@@ -25,59 +25,59 @@ st.markdown("""
     .vertical-divider { border-left: 2px solid #E2E8F0; height: 100%; margin-left: 10px; margin-right: 10px; }
     
     /* ================================================================= */
-    /* CSS OPCION NUCLEAR + ANTI-ESPACIOS PARA IMPRESIÓN PDF             */
+    /* CSS MODO DIOS: FUERZA A STREAMLIT A IMPRIMIR TODO SIN CORTES      */
     /* ================================================================= */
     @media print {
-        /* Forzar colores */
+        /* 1. Forzar colores exactos en Chrome */
         * {
             -webkit-print-color-adjust: exact !important;
             color-adjust: exact !important;
             print-color-adjust: exact !important;
         }
 
-        /* Ocultar interfaces innecesarias y el espaciador que creamos */
-        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], .espaciador { 
+        /* 2. Ocultar interfaz (botones, barra gris, etc) */
+        header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], .no-print { 
             display: none !important; 
         }
         
-        /* FORZAR EXPANSIÓN ABSOLUTA DE TODOS LOS CONTENEDORES PADRE */
-        html, body, #root, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], .main, .block-container {
+        /* 3. LIBERAR EL BLOQUEO DE ALTURA (LA CLAVE PARA VER TODAS LAS HOJAS) */
+        /* Aplicamos la orden de "desbordar" a TODOS los contenedores padre */
+        html, body, #root, .stApp, section, main, div[data-testid="stAppViewContainer"], div[data-testid="stMainBlockContainer"], .block-container {
             display: block !important;
+            position: relative !important;
             width: 100% !important;
             height: auto !important;
             min-height: auto !important;
             max-height: none !important;
             overflow: visible !important;
-            position: static !important;
             transform: none !important;
         }
         
-        /* ELIMINAR HUECOS BLANCOS Y MARGENES GIGANTES DE STREAMLIT */
-        [data-testid="stVerticalBlock"] {
-            gap: 0px !important;
+        /* Apuntar a las clases aleatorias que Streamlit inyecta para bloquear el scroll */
+        div[class^="st-emotion-cache-"] {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
         }
         
+        /* 4. Eliminar espacios en blanco gigantes */
         .block-container {
             padding: 0px !important;
             margin: 0px !important;
             max-width: 100% !important;
         }
+        
+        [data-testid="stVerticalBlock"] {
+            gap: 0px !important;
+        }
 
-        /* Evitar que tablas y gráficos se partan a la mitad */
-        div[data-testid="stVerticalBlock"] > div {
-            padding-top: 5px !important;
-            padding-bottom: 5px !important;
-            margin-bottom: 0px !important;
+        /* 5. Proteger gráficos y tablas para que no se corten por la mitad */
+        .js-plotly-plot, .stDataFrame, table, .kpi-card {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
         }
         
-        .js-plotly-plot, .stDataFrame, table {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-        }
-        
-        /* Setear hoja horizontal */
+        /* 6. Hoja Horizontal por defecto */
         @page {
             size: A4 landscape;
             margin: 10mm;
