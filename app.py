@@ -3,8 +3,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import math
 import datetime
-from fpdf import FPDF
-import io
 
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
@@ -202,153 +200,12 @@ def crear_torta(df, columna, titulo):
         margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     return fig
-# --- FUNCIÓN GENERADORA DE REPORTE PDF (CON GRÁFICOS) ---
-def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    
-    # Encabezado Principal
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.set_text_color(30, 41, 59) # Tono oscuro #1E293B
-    pdf.cell(0, 10, "REPORTE CONSOLIDADO DE CALIDAD POSVENTA", ln=True, align="C")
-    
-    pdf.set_font("Helvetica", "", 11)
-    pdf.set_text_color(100, 116, 139)
-    meses_str = ", ".join(meses_seleccionados)
-    pdf.cell(0, 6, f"Periodo: {meses_str} | Empresa: Autociel", ln=True, align="C")
-    pdf.ln(5)
-    
-    # Línea divisoria
-    pdf.set_draw_color(226, 232, 240)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(6)
-    
-    # --- SECCIÓN 1: MONITOR GLOBAL (CON GRÁFICOS) ---
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(37, 99, 235) # Azul oficial
-    pdf.cell(0, 8, "1. Monitor Global Comparativo", ln=True)
-    pdf.ln(2)
-    
-    # Cálculos de métricas
-    score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_m, "Q1 - Satisfacción general")
-    score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_m, "Q2 - Recomendación - taller")
-    prom_int = calcular_promedio(df_i, "Promedio")
-    score_int_nps, p_i, n_i, d_i = calcular_metricas_nps(df_i, "1-NPS")
-    
-    # Generar gráficos en memoria
-    fig_q1 = crear_velocimetro(score_q1, "SATISFACCION MARCA")
-    fig_q2 = crear_velocimetro(score_q2, "RECOMENDACION MARCA")
-    fig_int_prom = crear_velocimetro(prom_int, "SATISFACCION INTERNA", is_promedio=True)
-    fig_int_nps = crear_velocimetro(score_int_nps, "RECOMENDACION INTERNA")
-    
-    # Transformar a imágenes (PNG)
-    img_q1 = io.BytesIO(fig_q1.to_image(format="png", width=400, height=250))
-    img_q2 = io.BytesIO(fig_q2.to_image(format="png", width=400, height=250))
-    img_int_prom = io.BytesIO(fig_int_prom.to_image(format="png", width=400, height=250))
-    img_int_nps = io.BytesIO(fig_int_nps.to_image(format="png", width=400, height=250))
-    
-    # Insertar Fila 1 de imágenes (Marca)
-    y_actual = pdf.get_y()
-    pdf.image(img_q1, x=15, y=y_actual, w=85)
-    pdf.image(img_q2, x=105, y=y_actual, w=85)
-    pdf.ln(50) # Bajar el cursor debajo de las imágenes
-    
-    # Info de Muestra Fila 1
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(100, 116, 139)
-    pdf.cell(90, 5, f"Muestra: {p_q1+n_q1+d_q1} | Prom: {p_q1} | Neu: {n_q1} | Det: {d_q1}", align="C")
-    pdf.cell(90, 5, f"Muestra: {p_q2+n_q2+d_q2} | Prom: {p_q2} | Neu: {n_q2} | Det: {d_q2}", align="C", ln=True)
-    pdf.ln(5)
-
-    # Insertar Fila 2 de imágenes (Interna)
-    y_actual = pdf.get_y()
-    pdf.image(img_int_prom, x=15, y=y_actual, w=85)
-    pdf.image(img_int_nps, x=105, y=y_actual, w=85)
-    pdf.ln(50)
-    
-    # Info de Muestra Fila 2
-    pdf.cell(90, 5, "Promedio s/ encuestas", align="C")
-    pdf.cell(90, 5, f"Muestra: {p_i+n_i+d_i} | Prom: {p_i} | Neu: {n_i} | Det: {d_i}", align="C", ln=True)
-    pdf.ln(10)
-    
-    # --- SECCIÓN 2: RANKING OFICIAL DE ASESORES ---
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(30, 41, 59)
-    pdf.cell(0, 8, "2. Ranking Oficial de Asesores (Base Marca)", ln=True)
-    pdf.ln(2)
-    
-    col_asesor_key = next((col for col in df_m.columns if 'Asesor' in col), None)
-    if col_asesor_key:
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.set_fill_color(30, 41, 59)
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(55, 7, "Asesor de Servicio", border=1, fill=True)
-        pdf.cell(18, 7, "Muestra", border=1, fill=True, align="C")
-        pdf.cell(28, 7, "NPS Q2 (Rec.)", border=1, fill=True, align="C")
-        pdf.cell(28, 7, "NPS Q7 (Cort.)", border=1, fill=True, align="C")
-        pdf.cell(61, 7, "Estado Meta 94%", border=1, fill=True, align="C", ln=True)
-        
-        pdf.set_font("Helvetica", "", 9)
-        pdf.set_text_color(15, 23, 42)
-        
-        for p_asesor in df_m[col_asesor_key].dropna().unique():
-            df_ase = df_m[df_m[col_asesor_key] == p_asesor]
-            nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
-            nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
-            
-            t_validos = p_q2 + n_q2 + d_q2
-            if nps_q2 >= 94.0:
-                meta_str = "Alcanzado"
-            elif t_validos > 0:
-                faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
-                meta_str = f"Faltan {max(0, faltantes)} Prom."
-            else:
-                meta_str = "Sin datos"
-                
-            pdf.cell(55, 7, str(p_asesor)[:28], border=1)
-            pdf.cell(18, 7, str(len(df_ase)), border=1, align="C")
-            pdf.cell(28, 7, f"{nps_q2}%", border=1, align="C")
-            pdf.cell(28, 7, f"{nps_q7}%", border=1, align="C")
-            pdf.cell(61, 7, meta_str, border=1, align="C", ln=True)
-    
-    pdf.ln(6)
-    
-    # --- SECCIÓN 3: ALERTAS DE QUEJAS ---
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(219, 68, 68) # Rojo de alerta
-    pdf.cell(0, 8, "3. Alertas Detractoras Recientes (<= 6)", ln=True)
-    pdf.ln(2)
-    
-    pdf.set_font("Helvetica", "", 9)
-    pdf.set_text_color(15, 23, 42)
-    
-    if "Q1 - Satisfacción general" in df_m.columns and "Q2 - Recomendación - taller" in df_m.columns:
-        q1_num = pd.to_numeric(df_m["Q1 - Satisfacción general"], errors='coerce')
-        q2_num = pd.to_numeric(df_m["Q2 - Recomendación - taller"], errors='coerce')
-        df_detractores = df_m[(q1_num <= 6) | (q2_num <= 6)]
-        
-        if len(df_detractores) > 0:
-            contador = 0
-            for idx, row in df_detractores.iterrows():
-                if contador >= 6:
-                    pdf.cell(0, 6, "... Existen mas alertas en la plataforma web ...", ln=True, align="C")
-                    break
-                verb = str(row.get("Q3 - Verbalización", "Sin comentarios")).replace("\n", " ").strip()
-                if verb == "nan" or verb == "": verb = "Sin comentarios registrados."
-                ase_name = str(row.get(col_asesor_key, "N/A"))
-                pdf.multi_cell(0, 5, f"- Asesor: {ase_name} | Q1: {row.get('Q1 - Satisfacción general')} | Q2: {row.get('Q2 - Recomendación - taller')}\n  Comentario: {verb[:150]}", border='B')
-                pdf.ln(1)
-                contador += 1
-        else:
-            pdf.set_text_color(34, 197, 94)
-            pdf.cell(0, 7, "Excelente: No se detectan clientes detractores.", ln=True)
-            
-    return bytes(pdf.output())   
 # ==============================================================================
 # PANEL LATERAL DE FILTROS GLOBALES
 # ==============================================================================
 st.sidebar.header("Filtros Globales")
+# --- NUEVO INTERRUPTOR MODO REPORTE ---
+modo_reporte = st.sidebar.checkbox("🖨️ Activar Modo Reporte (PDF)", value=False, help="Agrupa todas las pestañas verticalmente para imprimir con Ctrl+P.")
 
 years_available = sorted(df_marca_raw['Año'].unique(), reverse=True)
 selected_years = st.sidebar.multiselect("Año", options=years_available, default=years_available[:1])
@@ -370,43 +227,59 @@ df_interna_filtrado = df_int_raw[df_int_raw['Año'].isin(selected_years) & df_in
 if selected_marcas:
     if 'Marca' in df_filtrado.columns: df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
     if 'Marca' in df_interna_filtrado.columns: df_interna_filtrado = df_interna_filtrado[df_interna_filtrado['Marca'].isin(selected_marcas)]
-# --- BLOQUE DE EXPORTACIÓN PDF (AL FINAL DEL PANEL LATERAL) ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("📦 Reporte Consolidado")
-
-if st.sidebar.button("⚙️ Pre-renderizar Informe PDF"):
-    try:
-        with st.sidebar.spinner("Compilando datos de todas las areas..."):
-            data_pdf = generar_reporte_pdf_bytes(df_filtrado, df_interna_filtrado, selected_months)
-            
-        st.sidebar.success("¡Reporte listo!")
-        st.sidebar.download_button(
-            label="📥 Descargar Reporte PDF",
-            data=data_pdf,
-            file_name=f"Reporte_Calidad_Autociel_{'_'.join(selected_months)}.pdf",
-            mime="application/pdf"
-        )
-    except Exception as e:
-        st.sidebar.error(f"Error al estructurar el PDF: {e}")
 # ==============================================================================
 # TÍTULO PRINCIPAL
 # ==============================================================================
 st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-items: center;'><span style='font-size: 40px; margin-right: 15px;'>📊</span> INDICADORES Y SEGUIMIENTO DE CALIDAD POSTVENTA AUTOCIEL</h1>", unsafe_allow_html=True)
 st.markdown("<br>", unsafe_allow_html=True)
-
 # ==============================================================================
-# PESTAÑAS PRINCIPALES
+# LÓGICA DE ENRUTAMIENTO (PESTAÑAS WEB VS MODO REPORTE APILADO)
 # ==============================================================================
-tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_prima = st.tabs([
-    "🏠 Monitor Global Comparativo", 
-    "👥 Tabla Unificada de Asesores", 
-    "👤 Ficha Histórica Asesor", 
-    "📊 Análisis de Carga Operativa",
-    "⚠️ Gestión de Quejas",
-    "📞 Telemarketer",
-    "💰 Prima de Calidad"
-])
-
+if not modo_reporte:
+    # ------------------------------------------------------------------------------
+    # MODO TRADICIONAL (PESTAÑAS WEB)
+    # ------------------------------------------------------------------------------
+    tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_prima = st.tabs([
+        "🏠 Monitor Global Comparativo", 
+        "👥 Tabla Unificada de Asesores", 
+        "👤 Ficha Histórica Asesor", 
+        "📊 Análisis de Carga Operativa",
+        "⚠️ Gestión de Quejas",
+        "📞 Telemarketer",
+        "💰 Prima de Calidad"
+    ])
+else:
+    # ------------------------------------------------------------------------------
+    # MODO REPORTE (CONTENEDORES VERTICALES)
+    # ------------------------------------------------------------------------------
+    st.markdown("<div style='background-color:#FFF3CD; padding:15px; border-radius:5px; color:#856404; font-weight:bold;' class='no-print'>🖨️ MODO REPORTE ACTIVADO. Presioná 'Ctrl + P' en tu teclado y elegí la opción 'Guardar como PDF' para exportar.</div><br>", unsafe_allow_html=True)
+    
+    tab_monitor = st.container()
+    tab_monitor.markdown("<h2 style='color:#1E293B;'>🏠 Monitor Global Comparativo</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<hr class='no-print' style='border: 2px solid #E2E8F0;'>", unsafe_allow_html=True)
+    tab_tabla = st.container()
+    tab_tabla.markdown("<h2 style='color:#1E293B;'>👥 Tabla Unificada de Asesores</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<hr class='no-print' style='border: 2px solid #E2E8F0;'>", unsafe_allow_html=True)
+    tab_ficha = st.container()
+    tab_ficha.markdown("<h2 style='color:#1E293B;'>👤 Ficha Histórica Asesor</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<hr class='no-print' style='border: 2px solid #E2E8F0;'>", unsafe_allow_html=True)
+    tab_carga = st.container()
+    tab_carga.markdown("<h2 style='color:#1E293B;'>📊 Análisis de Carga Operativa</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<hr class='no-print' style='border: 2px solid #E2E8F0;'>", unsafe_allow_html=True)
+    tab_quejas = st.container()
+    tab_quejas.markdown("<h2 style='color:#1E293B;'>⚠️ Gestión de Quejas</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<hr class='no-print' style='border: 2px solid #E2E8F0;'>", unsafe_allow_html=True)
+    tab_telemarketer = st.container()
+    tab_telemarketer.markdown("<h2 style='color:#1E293B;'>📞 Telemarketer</h2>", unsafe_allow_html=True)
+    
+    st.markdown("<hr class='no-print' style='border: 2px solid #E2E8F0;'>", unsafe_allow_html=True)
+    tab_prima = st.container()
+    tab_prima.markdown("<h2 style='color:#1E293B;'>💰 Prima de Calidad</h2>", unsafe_allow_html=True)
 # ------------------------------------------------------------------------------
 # 1. MONITOR GLOBAL COMPARATIVO
 # ------------------------------------------------------------------------------
