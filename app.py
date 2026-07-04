@@ -10,7 +10,6 @@ st.set_page_config(
     page_icon="🔧",
     layout="wide"
 )
-
 # Estilos CSS personalizados
 st.markdown("""
     <style>
@@ -22,30 +21,39 @@ st.markdown("""
     .kpi-label { font-size: 14px; color: #64748B; margin-top: 5px; font-weight: 500; }
     .kpi-sub { font-size: 13px; color: #22C55E; font-weight: bold; margin-top: 10px; }
     
-    div.stButton > button {
-        width: 100%;
-        border-radius: 5px;
-        font-weight: bold;
-        padding: 5px 0px;
-        border: 1px solid transparent;
-        transition: all 0.3s;
-    }
+    div.stButton > button { width: 100%; border-radius: 5px; font-weight: bold; padding: 5px 0px; border: 1px solid transparent; transition: all 0.3s; }
+    div.stButton > button:hover { opacity: 0.8; border-color: #1E293B; }
+    .vertical-divider { border-left: 2px solid #E2E8F0; height: 100%; margin-left: 10px; margin-right: 10px; }
     
-    div.stButton > button:hover {
-        opacity: 0.8;
-        border-color: #1E293B;
-    }
-    
-    /* Separador vertical para pantallas divididas */
-    .vertical-divider {
-        border-left: 2px solid #E2E8F0;
-        height: 100%;
-        margin-left: 10px;
-        margin-right: 10px;
+    /* ======================================================= */
+    /* MAGIA PARA ROMPER EL SCROLL DE STREAMLIT E IMPRIMIR PDF */
+    /* ======================================================= */
+    @media print {
+        .no-print { display: none !important; }
+        
+        /* 1. Ocultamos la barra lateral gris y el menú superior de Streamlit */
+        [data-testid="stSidebar"] { display: none !important; }
+        [data-testid="stHeader"] { display: none !important; }
+        [data-testid="stToolbar"] { display: none !important; }
+        
+        /* 2. Forzamos a Streamlit a mostrar todo el alto del documento sin recortarlo */
+        html, body, .stApp, .main, .block-container, [data-testid="stVerticalBlock"] {
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            position: relative !important;
+        }
+        
+        /* 3. Ajustamos la hoja de impresión */
+        @page { 
+            margin: 1cm; 
+            size: A4 portrait;
+        }
     }
     </style>
 """, unsafe_allow_html=True)
-
 # URLs públicas de Google Sheets
 SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
