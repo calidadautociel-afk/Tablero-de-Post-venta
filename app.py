@@ -25,7 +25,7 @@ st.markdown("""
     .vertical-divider { border-left: 2px solid #E2E8F0; height: 100%; margin-left: 10px; margin-right: 10px; }
     
     /* ================================================================= */
-    /* CSS OPCION NUCLEAR: ROMPE EL BLOQUEO DE IMPRESIÓN DE STREAMLIT    */
+    /* CSS OPCION NUCLEAR + ANTI-ESPACIOS PARA IMPRESIÓN PDF             */
     /* ================================================================= */
     @media print {
         /* Forzar colores */
@@ -35,8 +35,8 @@ st.markdown("""
             print-color-adjust: exact !important;
         }
 
-        /* Ocultar interfaces innecesarias */
-        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"] { 
+        /* Ocultar interfaces innecesarias y el espaciador que creamos */
+        .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"], .espaciador { 
             display: none !important; 
         }
         
@@ -52,7 +52,11 @@ st.markdown("""
             transform: none !important;
         }
         
-        /* Ajustar ancho de la hoja */
+        /* ELIMINAR HUECOS BLANCOS Y MARGENES GIGANTES DE STREAMLIT */
+        [data-testid="stVerticalBlock"] {
+            gap: 0px !important;
+        }
+        
         .block-container {
             padding: 0px !important;
             margin: 0px !important;
@@ -60,7 +64,15 @@ st.markdown("""
         }
 
         /* Evitar que tablas y gráficos se partan a la mitad */
-        div[data-testid="stVerticalBlock"] > div, .js-plotly-plot, .stDataFrame, table {
+        div[data-testid="stVerticalBlock"] > div {
+            padding-top: 5px !important;
+            padding-bottom: 5px !important;
+            margin-bottom: 0px !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+        
+        .js-plotly-plot, .stDataFrame, table {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
         }
@@ -258,7 +270,7 @@ if selected_marcas:
 # TÍTULO PRINCIPAL
 # ==============================================================================
 st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-items: center;'><span style='font-size: 40px; margin-right: 15px;'>📊</span> INDICADORES Y SEGUIMIENTO DE CALIDAD POSTVENTA AUTOCIEL</h1>", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("<div class='espaciador' style='height: 15px;'></div>", unsafe_allow_html=True)
 # ==============================================================================
 # LÓGICA DE ENRUTAMIENTO (PESTAÑAS WEB VS MODO REPORTE APILADO)
 # ==============================================================================
