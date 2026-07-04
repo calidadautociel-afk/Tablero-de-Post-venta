@@ -26,46 +26,47 @@ st.markdown("""
     .vertical-divider { border-left: 2px solid #E2E8F0; height: 100%; margin-left: 10px; margin-right: 10px; }
     
     /* ================================================================= */
-    /* CSS BALA DE PLATA: ROMPE EL BLOQUEO DE IMPRESIÓN DE STREAMLIT     */
+    /* CSS OPCION NUCLEAR: ROMPE EL BLOQUEO DE IMPRESIÓN DE STREAMLIT    */
     /* ================================================================= */
     @media print {
-        /* 1. Forzar impresion de colores en Chrome */
+        /* Forzar colores */
         * {
             -webkit-print-color-adjust: exact !important;
             color-adjust: exact !important;
             print-color-adjust: exact !important;
         }
 
-        /* 2. Ocultar header, footer, barra lateral y barra superior negra */
+        /* Ocultar interfaces innecesarias */
         .no-print, header, footer, [data-testid="stSidebar"], [data-testid="stHeader"] { 
             display: none !important; 
         }
         
-        /* 3. Liberar TODO el scroll y posiciones fijas */
-        html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], .main, .block-container {
+        /* FORZAR EXPANSIÓN ABSOLUTA DE TODOS LOS CONTENEDORES PADRE */
+        html, body, #root, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], .main, .block-container {
             display: block !important;
+            width: 100% !important;
             height: auto !important;
             min-height: auto !important;
             max-height: none !important;
             overflow: visible !important;
             position: static !important;
+            transform: none !important;
         }
         
-        /* 4. Estirar el ancho para aprovechar la hoja horizontal */
+        /* Ajustar ancho de la hoja */
         .block-container {
+            padding: 0px !important;
+            margin: 0px !important;
             max-width: 100% !important;
-            width: 100% !important;
-            padding: 10px !important;
-            margin: 0 !important;
         }
 
-        /* 5. Evitar que tablas y gráficos queden cortados a la mitad de 2 hojas */
+        /* Evitar que tablas y gráficos se partan a la mitad */
         div[data-testid="stVerticalBlock"] > div, .js-plotly-plot, .stDataFrame, table {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
         }
         
-        /* 6. Forzar hoja horizontal directamente desde el código */
+        /* Setear hoja horizontal */
         @page {
             size: A4 landscape;
             margin: 10mm;
