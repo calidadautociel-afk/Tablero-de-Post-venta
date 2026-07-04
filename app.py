@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.graph_objects as go
 import math
 import datetime
-
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
     page_title="Indicadores y Seguimiento de Calidad Posventa - Autociel",
