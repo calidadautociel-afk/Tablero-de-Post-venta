@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import math
 import datetime
+from fpdf import FPDF
 
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
@@ -200,7 +201,125 @@ def crear_torta(df, columna, titulo):
         margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     return fig
-
+# --- FUNCIÓN GENERADORA DE REPORTE PDF ---
+def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    
+    # Encabezado Principal
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(30, 41, 59) # Tono oscuro #1E293B
+    pdf.cell(0, 10, "REPORTE CONSOLIDADO DE CALIDAD POSVENTA", ln=True, align="C")
+    
+    pdf.set_font("Helvetica", "", 11)
+    pdf.set_text_color(100, 116, 139)
+    meses_str = ", ".join(meses_seleccionados)
+    pdf.cell(0, 6, f"Periodo: {meses_str} | Empresa: Autociel", ln=True, align="C")
+    pdf.ln(5)
+    
+    # Línea divisoria
+    pdf.set_draw_color(226, 232, 240)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(6)
+    
+    # --- SECCIÓN 1: MONITOR GLOBAL ---
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(37, 99, 235) # Azul oficial
+    pdf.cell(0, 8, "1. Monitor Global (Metricas Clave)", ln=True)
+    pdf.ln(2)
+    
+    # Cálculos dinámicos utilizando tus funciones existentes
+    score_q1, _, _, _ = calcular_metricas_nps(df_m, "Q1 - Satisfacción general")
+    score_q2, _, _, _ = calcular_metricas_nps(df_m, "Q2 - Recomendación - taller")
+    prom_int = calcular_promedio(df_i, "Promedio")
+    score_int_nps, _, _, _ = calcular_metricas_nps(df_i, "1-NPS")
+    
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(95, 8, f" NPS Q1 (Satisfaccion General - Marca): {score_q1}%", border=1)
+    pdf.cell(95, 8, f" NPS Q2 (Recomendacion - Marca): {score_q2}%", border=1, ln=True)
+    pdf.cell(95, 8, f" Satisfaccion Promedio (Interna): {prom_int}%", border=1)
+    pdf.cell(95, 8, f" NPS Recomendacion (Interna): {score_int_nps}%", border=1, ln=True)
+    pdf.ln(6)
+    
+    # --- SECCIÓN 2: RANKING OFICIAL DE ASESORES ---
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(30, 41, 59)
+    pdf.cell(0, 8, "2. Ranking Oficial de Asesores (Base Marca)", ln=True)
+    pdf.ln(2)
+    
+    col_asesor_key = next((col for col in df_m.columns if 'Asesor' in col), None)
+    if col_asesor_key:
+        # Encabezado de la Tabla
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(30, 41, 59)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(55, 7, "Asesor de Servicio", border=1, fill=True)
+        pdf.cell(18, 7, "Muestra", border=1, fill=True, align="C")
+        pdf.cell(28, 7, "NPS Q2 (Rec.)", border=1, fill=True, align="C")
+        pdf.cell(28, 7, "NPS Q7 (Cort.)", border=1, fill=True, align="C")
+        pdf.cell(61, 7, "Estado Meta 94%", border=1, fill=True, align="C", ln=True)
+        
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(15, 23, 42)
+        
+        # Procesamiento en lote para el PDF
+        for p_asesor in df_m[col_asesor_key].dropna().unique():
+            df_ase = df_m[df_m[col_asesor_key] == p_asesor]
+            nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
+            nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
+            
+            t_validos = p_q2 + n_q2 + d_q2
+            if nps_q2 >= 94.0:
+                meta_str = "Alcanzado"
+            elif t_validos > 0:
+                faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
+                meta_str = f"Faltan {max(0, faltantes)} Promotores"
+            else:
+                meta_str = "Sin datos"
+                
+            pdf.cell(55, 7, str(p_asesor)[:28], border=1)
+            pdf.cell(18, 7, str(len(df_ase)), border=1, align="C")
+            pdf.cell(28, 7, f"{nps_q2}%", border=1, align="C")
+            pdf.cell(28, 7, f"{nps_q7}%", border=1, align="C")
+            pdf.cell(61, 7, meta_str, border=1, align="C", ln=True)
+    else:
+        pdf.set_font("Helvetica", "I", 10)
+        pdf.cell(0, 7, "No se encontro columna de asesores en la base activa.", ln=True)
+        
+    pdf.ln(6)
+    
+    # --- SECCIÓN 3: ALERTAS DE QUEJAS ---
+    pdf.set_font("Helvetica", "B", 13)
+    pdf.set_text_color(219, 68, 68) # Rojo de alerta
+    pdf.cell(0, 8, "3. Alertas Detractoras Recientes (Satisfaccion/Recomendacion <= 6)", ln=True)
+    pdf.ln(2)
+    
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(15, 23, 42)
+    
+    if "Q1 - Satisfacción general" in df_m.columns and "Q2 - Recomendación - taller" in df_m.columns:
+        q1_num = pd.to_numeric(df_m["Q1 - Satisfacción general"], errors='coerce')
+        q2_num = pd.to_numeric(df_m["Q2 - Recomendación - taller"], errors='coerce')
+        df_detractores = df_m[(q1_num <= 6) | (q2_num <= 6)]
+        
+        if len(df_detractores) > 0:
+            contador = 0
+            for idx, row in df_detractores.iterrows():
+                if contador >= 8: # Límite de seguridad para que no se haga infinito el PDF
+                    pdf.cell(0, 6, "... Existen mas alertas registradas en la plataforma web ...", ln=True, align="C")
+                    break
+                verb = str(row.get("Q3 - Verbalización", "Sin comentarios registrados.")).replace("\n", " ").strip()
+                ase_name = str(row.get(col_asesor_key, "N/A"))
+                pdf.multi_cell(0, 5, f"- Asesor: {ase_name} | Q1: {row.get('Q1 - Satisfacción general')} | Q2: {row.get('Q2 - Recomendación - taller')}\n  Comentario: {verb[:160]}", border='B')
+                pdf.ln(1)
+                contador += 1
+        else:
+            pdf.set_text_color(34, 197, 94)
+            pdf.cell(0, 7, "Excelente: No se detectan clientes detractores con los filtros aplicados.", ln=True)
+            
+    return bytes(pdf.output())   
 # ==============================================================================
 # PANEL LATERAL DE FILTROS GLOBALES
 # ==============================================================================
@@ -226,7 +345,24 @@ df_interna_filtrado = df_int_raw[df_int_raw['Año'].isin(selected_years) & df_in
 if selected_marcas:
     if 'Marca' in df_filtrado.columns: df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
     if 'Marca' in df_interna_filtrado.columns: df_interna_filtrado = df_interna_filtrado[df_interna_filtrado['Marca'].isin(selected_marcas)]
+# --- BLOQUE DE EXPORTACIÓN PDF (AL FINAL DEL PANEL LATERAL) ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📦 Reporte Consolidado")
 
+if st.sidebar.button("⚙️ Pre-renderizar Informe PDF"):
+    try:
+        with st.sidebar.spinner("Compilando datos de todas las areas..."):
+            data_pdf = generar_reporte_pdf_bytes(df_filtrado, df_interna_filtrado, selected_months)
+            
+        st.sidebar.success("¡Reporte listo!")
+        st.sidebar.download_button(
+            label="📥 Descargar Reporte PDF",
+            data=data_pdf,
+            file_name=f"Reporte_Calidad_Autociel_{'_'.join(selected_months)}.pdf",
+            mime="application/pdf"
+        )
+    except Exception as e:
+        st.sidebar.error(f"Error al estructurar el PDF: {e}")
 # ==============================================================================
 # TÍTULO PRINCIPAL
 # ==============================================================================
