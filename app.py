@@ -41,13 +41,13 @@ st.markdown("""
         }
         
         /* Destruir TODAS las cajas restrictivas de Streamlit */
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"], .main, .block-container {
+        html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"], [data-testid="stMainBlockContainer"], .main, .block-container {
             display: block !important;
             height: auto !important;
             min-height: 100% !important;
             max-height: none !important;
             overflow: visible !important;
-            position: static !important;
+            position: relative !important;
         }
         
         /* Expandir a lo ancho de la hoja */
@@ -330,7 +330,14 @@ with tab_monitor:
                 with sub_c6: st.button(f"😠 {d_q2}", key="btn_m_d2", on_click=set_filtro_marca, args=('Detractor',))
                 
             st.markdown("<br>", unsafe_allow_html=True)
-            subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+            if not modo_reporte:
+                subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+            else:
+                subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.container(), st.container(), st.container(), st.container()
+                subtab_agendamiento.markdown("**📅 Agendamiento**")
+                subtab_asesor.markdown("**👔 Asesor**")
+                subtab_taller.markdown("**⚙️ Taller**")
+                subtab_contacto.markdown("**📞 Contacto**")
             with subtab_agendamiento:
                 c1, c2 = st.columns(2)
                 with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
@@ -368,7 +375,14 @@ with tab_monitor:
                 with sub_i6: st.button(f"😠 {d_i2}", key="btn_i_d2", on_click=set_filtro_int, args=('Detractor',))
                 
             st.markdown("<br>", unsafe_allow_html=True)
-            subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+            if not modo_reporte:
+                subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+            else:
+                subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.container(), st.container(), st.container(), st.container()
+                subtab_agend_int.markdown("**📅 Agendamiento**")
+                subtab_asesor_int.markdown("**👔 Asesor**")
+                subtab_taller_int.markdown("**⚙️ Taller**")
+                subtab_contacto_int.markdown("**📞 Contacto**")
             with subtab_agend_int:
                 st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
             with subtab_asesor_int:
@@ -450,9 +464,12 @@ with tab_monitor:
 # ------------------------------------------------------------------------------
 with tab_tabla:
     st.markdown("### Ranking de Desempeño General de Asesores")
-    
-    subtab_rk_marca, subtab_rk_int = st.tabs(["🏆 Ranking Oficial (Marca)", "🎯 Ranking Interno"])
-    
+    if not modo_reporte:
+        subtab_rk_marca, subtab_rk_int = st.tabs(["🏆 Ranking Oficial (Marca)", "🎯 Ranking Interno"])
+    else:
+        subtab_rk_marca, subtab_rk_int = st.container(), st.container()
+        subtab_rk_marca.markdown("**🏆 Ranking Oficial (Marca)**")
+        subtab_rk_int.markdown("**🎯 Ranking Interno**")    
     # --- RANKING MARCA ---
     with subtab_rk_marca:
         col_asesor_key = next((col for col in df_filtrado.columns if 'Asesor' in col), None)
