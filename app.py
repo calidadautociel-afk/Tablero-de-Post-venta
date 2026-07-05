@@ -597,8 +597,11 @@ with tab_tabla:
                     "Meta 94%": meta_str
                 })
                 
-            df_ranking = pd.DataFrame(ranking_data).sort_values(by="NPS Q2 (Recomendación)", ascending=False)
-            st.dataframe(df_ranking, use_container_width=True, hide_index=True)
+            if len(ranking_data) > 0:
+                df_ranking = pd.DataFrame(ranking_data).sort_values(by="NPS Q2 (Recomendación)", ascending=False)
+                st.dataframe(df_ranking, use_container_width=True, hide_index=True)
+            else:
+                st.info("📊 Aún no se registran encuestas oficiales para el período seleccionado.")
         else:
             st.warning("Columna de Asesor no encontrada en la base de la Marca.")
             
@@ -631,8 +634,11 @@ with tab_tabla:
                     "Limpieza (NPS)": nps_limpieza
                 })
                 
-            df_ranking_int = pd.DataFrame(ranking_data_int).sort_values(by="Recomendación (1-NPS)", ascending=False)
-            st.dataframe(df_ranking_int, use_container_width=True, hide_index=True)
+            if len(ranking_data_int) > 0:
+                df_ranking_int = pd.DataFrame(ranking_data_int).sort_values(by="Recomendación (1-NPS)", ascending=False)
+                st.dataframe(df_ranking_int, use_container_width=True, hide_index=True)
+            else:
+                st.info("🎯 Aún no se registran encuestas internas para el período seleccionado.")
         else:
             st.warning("La columna 'Asesor' no se encontró en la base de datos Interna.")
 
