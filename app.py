@@ -52,6 +52,7 @@ st.markdown("""
 SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
 SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
+SHEET_URL_RECLAMOS = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1460120243"
 
 # Mapeo de meses en español
 MESES_ES = {
@@ -97,7 +98,7 @@ def load_data(url):
     return df
 
 @st.cache_data(ttl=60)
-def load_email_sheet(url):
+def load_simple_sheet(url):
     df = pd.read_csv(url)
     df.columns = df.columns.str.strip()
     return df
@@ -105,7 +106,8 @@ def load_email_sheet(url):
 try:
     df_marca_raw = load_data(SHEET_URL_MARCA)
     df_int_raw = load_data(SHEET_URL_INTERNA)
-    df_email_llave_raw = load_email_sheet(SHEET_URL_EMAIL_LLAVE)
+    df_email_llave_raw = load_simple_sheet(SHEET_URL_EMAIL_LLAVE)
+    df_reclamos_raw = load_simple_sheet(SHEET_URL_RECLAMOS)
 except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
@@ -202,6 +204,7 @@ def crear_torta(df, columna, titulo):
         margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     return fig
+
 # --- FUNCIÓN GENERADORA DE REPORTE PDF (CON GRÁFICOS) ---
 def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
     pdf = FPDF(orientation="P", unit="mm", format="A4")
@@ -345,6 +348,7 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
             pdf.cell(0, 7, "Excelente: No se detectan clientes detractores.", ln=True)
             
     return bytes(pdf.output())   
+
 # ==============================================================================
 # PANEL LATERAL DE FILTROS GLOBALES
 # ==============================================================================
@@ -370,6 +374,7 @@ df_interna_filtrado = df_int_raw[df_int_raw['Año'].isin(selected_years) & df_in
 if selected_marcas:
     if 'Marca' in df_filtrado.columns: df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
     if 'Marca' in df_interna_filtrado.columns: df_interna_filtrado = df_interna_filtrado[df_interna_filtrado['Marca'].isin(selected_marcas)]
+
 # --- BLOQUE DE EXPORTACIÓN PDF (AL FINAL DEL PANEL LATERAL) ---
 st.sidebar.markdown("---")
 st.sidebar.subheader("📦 Reporte Consolidado")
@@ -388,6 +393,7 @@ if st.sidebar.button("⚙️ Pre-renderizar Informe PDF"):
         )
     except Exception as e:
         st.sidebar.error(f"Error al estructurar el PDF: {e}")
+
 # ==============================================================================
 # TÍTULO PRINCIPAL
 # ==============================================================================
@@ -395,16 +401,17 @@ st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-it
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
-# PESTAÑAS PRINCIPALES
+# PESTAÑAS PRINCIPALES (Añadido "Análisis de Reclamos")
 # ==============================================================================
-tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_prima = st.tabs([
+tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_prima, tab_reclamos = st.tabs([
     "🏠 Monitor Global Comparativo", 
     "👥 Tabla Unificada de Asesores", 
     "👤 Ficha Histórica Asesor", 
     "📊 Análisis de Carga Operativa",
     "⚠️ Gestión de Quejas",
     "📞 Telemarketer",
-    "💰 Prima de Calidad"
+    "💰 Prima de Calidad",
+    "📋 Análisis de Reclamos"
 ])
 
 # ------------------------------------------------------------------------------
@@ -1381,13 +1388,12 @@ with tab_prima:
             st.markdown("<br>", unsafe_allow_html=True)
             
             # ==============================================================================
-            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES (CON LA 4TA TARJETA ORDENADA)
+            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES
             # ==============================================================================
             st.markdown("---")
             st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
             st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje de las transferencias de la marca, utiliza estos selectores para auditar los cobros reales.</p>", unsafe_allow_html=True)
             
-            # Cálculo Automático a 45 días del mes cobrado por defecto
             fecha_actual = datetime.date.today()
             fecha_cobro = fecha_actual - datetime.timedelta(days=45)
             mes_default_nombre = MESES_ES.get(fecha_cobro.month, "Enero")
@@ -1428,7 +1434,6 @@ with tab_prima:
                     montos_grafico_perdida.append(perdida_mes_calc)
                     meses_grafico_nombres.append(d["Mes_Nombre"])
             
-            # Calculo para la 3ra tarjeta: % de Prima Alcanzado (Solo de los meses cobrados)
             monto_maximo_seleccionados = monto_cobrado_efectivo + monto_perdido_acumulado
             pct_alcanzado_cobrados = (monto_cobrado_efectivo / monto_maximo_seleccionados * 100) if monto_maximo_seleccionados > 0 else 0.0
             
@@ -1437,10 +1442,8 @@ with tab_prima:
             str_pct_alcanzado = f"{pct_alcanzado_cobrados:.1f}%"
             str_pendiente = f"${monto_pendiente_prevision:,.0f}".replace(",", ".")
             
-            # Generación de 4 columnas para las KPI cards en el orden solicitado
             col_c_1, col_c_2, col_c_3, col_c_4 = st.columns(4)
             
-            # 1. MONTO COBRADO
             with col_c_1:
                 st.markdown(f"""
                     <div class='kpi-card' style='border-left: 5px solid #10B981; padding: 15px;'>
@@ -1450,7 +1453,6 @@ with tab_prima:
                     </div>
                 """, unsafe_allow_html=True)
                 
-            # 2. MONTO PERDIDO
             with col_c_2:
                 st.markdown(f"""
                     <div class='kpi-card' style='border-left: 5px solid #EF4444; padding: 15px;'>
@@ -1460,7 +1462,6 @@ with tab_prima:
                     </div>
                 """, unsafe_allow_html=True)
                 
-            # 3. % DE PRIMA ALCANZADO
             with col_c_3:
                 st.markdown(f"""
                     <div class='kpi-card' style='border-left: 5px solid #8B5CF6; padding: 15px;'>
@@ -1470,7 +1471,6 @@ with tab_prima:
                     </div>
                 """, unsafe_allow_html=True)
                 
-            # 4. PREVISIÓN PENDIENTE
             with col_c_4:
                 st.markdown(f"""
                     <div class='kpi-card' style='border-left: 5px solid #3B82F6; padding: 15px;'>
@@ -1480,12 +1480,10 @@ with tab_prima:
                     </div>
                 """, unsafe_allow_html=True)
             
-            # --- RENDERIZADO DEL GRÁFICO DE LÍNEAS CON ÁREAS SOWBREADAS CONTINUAS ---
             if meses_grafico_nombres:
                 st.markdown("<br>", unsafe_allow_html=True)
                 fig_econ = go.Figure()
                 
-                # 1. Área de Ganancia ($ Alcanzado): Sombreado verde claro completo por debajo hasta el piso 0
                 fig_econ.add_trace(go.Scatter(
                     x=meses_grafico_nombres, y=montos_grafico_alcanzado,
                     mode='lines+markers+text', name='$ Alcanzado a Cobrar',
@@ -1494,11 +1492,10 @@ with tab_prima:
                     text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
                     textposition='top center',
                     fill='tozeroy',
-                    fillcolor='rgba(34, 197, 94, 0.25)', # Verde Claro traslúcido
+                    fillcolor='rgba(34, 197, 94, 0.25)', 
                     hovertemplate='<b>%{x}</b><br>Alcanzado: %{y:$,.0f}<extra></extra>'
                 ))
                 
-                # 2. Referencia de Techo Comercial ($ Monto Máximo)
                 fig_econ.add_trace(go.Scatter(
                     x=meses_grafico_nombres, y=montos_grafico_maximo,
                     mode='lines', name='$ Monto Máximo',
@@ -1506,14 +1503,13 @@ with tab_prima:
                     hoverinfo='skip'
                 ))
                 
-                # 3. Área de Pérdida ($ de Pérdida): Sombreado rojo claro completo por debajo hasta el piso 0
                 fig_econ.add_trace(go.Scatter(
                     x=meses_grafico_nombres, y=montos_grafico_perdida,
                     mode='lines+markers', name='$ de Pérdida',
                     line=dict(color='#EF4444', width=2),
                     marker=dict(size=6, color='#EF4444'),
                     fill='tozeroy',
-                    fillcolor='rgba(239, 68, 68, 0.22)', # Rojo Claro traslúcido por debajo
+                    fillcolor='rgba(239, 68, 68, 0.22)', 
                     hovertemplate='<b>%{x}</b><br>Pérdida Nominal: %{y:$,.0f}<extra></extra>'
                 ))
                 
@@ -1530,3 +1526,151 @@ with tab_prima:
                 st.plotly_chart(fig_econ, use_container_width=True)
     else:
         st.info("No se localizó un historial anual para estructurar la matriz de llaves.")
+
+# ------------------------------------------------------------------------------
+# 8. PESTAÑA: ANÁLISIS DE RECLAMOS
+# ------------------------------------------------------------------------------
+with tab_reclamos:
+    st.markdown("### 📋 Análisis de Reclamos")
+    st.markdown("Esta sección evalúa el volumen y porcentaje de reclamos operativos de forma independiente.")
+    
+    df_rec_base = df_reclamos_raw.copy()
+    
+    if 'Fecha Cierre' in df_rec_base.columns:
+        df_rec_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_rec_base['Fecha Cierre'], dayfirst=True, errors='coerce')
+        df_rec_base['Año_Cierre'] = df_rec_base['Fecha_Cierre_Clean'].dt.year
+        df_rec_base['Mes_Cierre_Num'] = df_rec_base['Fecha_Cierre_Clean'].dt.month
+        
+        df_rec_base = df_rec_base.dropna(subset=['Año_Cierre', 'Mes_Cierre_Num'])
+        df_rec_base['Año_Cierre'] = df_rec_base['Año_Cierre'].astype(int)
+        df_rec_base['Mes_Cierre_Num'] = df_rec_base['Mes_Cierre_Num'].astype(int)
+        
+        # --- FILTROS INDEPENDIENTES ---
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            anios_rec_disponibles = sorted(df_rec_base['Año_Cierre'].unique(), reverse=True)
+            anio_rec_sel = st.selectbox("Seleccione Año de Cierre (Reclamos):", options=anios_rec_disponibles, key="sb_anio_rec")
+        with col_r2:
+            df_rec_anio = df_rec_base[df_rec_base['Año_Cierre'] == anio_rec_sel]
+            meses_rec_disponibles = sorted(df_rec_anio['Mes_Cierre_Num'].unique())
+            opciones_meses_rec = {m: MESES_ES[m] for m in meses_rec_disponibles}
+            meses_rec_sel = st.multiselect("Seleccione Mes(es) de Cierre:", options=list(opciones_meses_rec.keys()), format_func=lambda x: opciones_meses_rec[x], default=meses_rec_disponibles, key="ms_mes_rec")
+        
+        df_rec_filtrado = df_rec_anio[df_rec_anio['Mes_Cierre_Num'].isin(meses_rec_sel)]
+        
+        # --- 1. GRÁFICO DE LÍNEAS (% DE RECLAMOS MENSUAL) ---
+        st.markdown("---")
+        st.markdown("#### 📈 Evolución Mensual de Reclamos")
+        
+        line_data_rec = []
+        for m_num in meses_rec_disponibles:
+            df_m = df_rec_anio[df_rec_anio['Mes_Cierre_Num'] == m_num]
+            
+            c_reclamo = df_m['Reclamo'].notna().sum() if 'Reclamo' in df_m.columns else 0
+            c_contactado = df_m['Contactado'].notna().sum() if 'Contactado' in df_m.columns else 0
+            c_vacios = df_m['Estado'].isna().sum() if 'Estado' in df_m.columns else 0
+            
+            denom = c_contactado + c_reclamo
+            pct = round((c_reclamo / denom * 100), 1) if denom > 0 else 0.0
+            
+            line_data_rec.append({
+                "Mes_Nombre": MESES_ES[m_num],
+                "Mes_Num": m_num,
+                "Pct_Reclamo": pct,
+                "Cant_Reclamo": c_reclamo,
+                "Cant_Contactado": c_contactado,
+                "Cant_Vacios": c_vacios
+            })
+            
+        if line_data_rec:
+            df_line_rec = pd.DataFrame(line_data_rec).sort_values("Mes_Num")
+            fig_line_rec = go.Figure()
+            
+            custom_hover_rec = "<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos: %{customdata[0]}<br>Contactados: %{customdata[1]}<br>Celdas Vacías (Estado): %{customdata[2]}<extra></extra>"
+            matrix_rec = df_line_rec[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values
+            
+            fig_line_rec.add_trace(go.Scatter(
+                x=df_line_rec['Mes_Nombre'], y=df_line_rec['Pct_Reclamo'],
+                mode='lines+markers+text', name='% Reclamos',
+                line=dict(color='#EF4444', width=4),
+                marker=dict(size=8, color='#EF4444'),
+                text=df_line_rec['Pct_Reclamo'].apply(lambda x: f"{x}%"),
+                textposition='top center',
+                customdata=matrix_rec, hovertemplate=custom_hover_rec
+            ))
+            
+            fig_line_rec.update_layout(
+                yaxis=dict(title='Porcentaje (%)', range=[0, max(df_line_rec['Pct_Reclamo']) + 10 if not df_line_rec.empty else 100], showgrid=True, gridcolor='#E2E8F0'),
+                xaxis=dict(showgrid=False),
+                margin=dict(l=40, r=40, t=20, b=40),
+                height=400,
+                hovermode='x unified',
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_line_rec, use_container_width=True)
+        else:
+            st.info("No hay datos suficientes para el gráfico de evolución.")
+            
+        # --- 2. GRÁFICO DE EMBUDO (CATEGORÍAS DE RECLAMO) ---
+        st.markdown("---")
+        st.markdown("#### 🌪️ Distribución de Categorías de Reclamo (Meses Seleccionados)")
+        
+        if 'Reclamo' in df_rec_filtrado.columns:
+            df_reclamo_clean = df_rec_filtrado.dropna(subset=['Reclamo'])
+            if not df_reclamo_clean.empty:
+                counts_reclamo = df_reclamo_clean['Reclamo'].value_counts().reset_index()
+                counts_reclamo.columns = ['Categoria', 'Cantidad']
+                
+                fig_funnel = go.Figure(go.Funnel(
+                    y=counts_reclamo['Categoria'],
+                    x=counts_reclamo['Cantidad'],
+                    textinfo="value+percent initial",
+                    marker={"color": ["#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE"] * 10}
+                ))
+                fig_funnel.update_layout(margin=dict(l=20, r=20, t=20, b=20), height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_funnel, use_container_width=True)
+            else:
+                st.info("No se registraron categorías de reclamo para este período.")
+        else:
+            st.warning("Columna 'Reclamo' no encontrada.")
+            
+        # --- 3. GRÁFICO DE BARRAS POR ÁREA ---
+        st.markdown("---")
+        st.markdown("#### 🏢 Impacto y Volumen de Reclamos por Área (Meses Seleccionados)")
+        
+        areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
+        data_areas = []
+        
+        c_contactado_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
+        
+        for area in areas_cols:
+            if area in df_rec_filtrado.columns:
+                c_area = df_rec_filtrado[area].notna().sum()
+                denom_area = c_contactado_tot + c_area
+                pct_area = round((c_area / denom_area * 100), 1) if denom_area > 0 else 0.0
+                data_areas.append({"Area": area, "Volumen": c_area, "Pct": pct_area})
+        
+        if data_areas:
+            df_areas = pd.DataFrame(data_areas).sort_values("Volumen", ascending=True)
+            
+            fig_bar_areas = go.Figure()
+            fig_bar_areas.add_trace(go.Bar(
+                y=df_areas['Area'], x=df_areas['Volumen'],
+                orientation='h',
+                marker=dict(color='#8B5CF6'),
+                text=df_areas.apply(lambda row: f"Vol: {row['Volumen']} | Reclamo: {row['Pct']}%", axis=1),
+                textposition='auto',
+                hovertemplate="<b>Área:</b> %{y}<br><b>Volumen:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>",
+                customdata=df_areas['Pct']
+            ))
+            fig_bar_areas.update_layout(
+                height=350 if len(df_areas) > 3 else 250,
+                margin=dict(l=20, r=20, t=20, b=20),
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+            )
+            st.plotly_chart(fig_bar_areas, use_container_width=True)
+        else:
+            st.warning("No se encontraron las columnas de áreas especificadas en la base de datos.")
+            
+    else:
+        st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Análisis de Reclamos.")
