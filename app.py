@@ -1634,43 +1634,124 @@ with tab_reclamos:
         else:
             st.warning("Columna 'Reclamo' no encontrada.")
             
-        # --- 3. GRÁFICO DE BARRAS POR ÁREA ---
+        # --- 3. GRÁFICO DE BARRAS APILADAS POR ÁREA Y CATEGORÍA ---
         st.markdown("---")
         st.markdown("#### 🏢 Impacto y Volumen de Reclamos por Área (Meses Seleccionados)")
         
         areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
-        data_areas = []
         
         c_contactado_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
         
+        area_stats = {}
         for area in areas_cols:
             if area in df_rec_filtrado.columns:
                 c_area = df_rec_filtrado[area].notna().sum()
-                denom_area = c_contactado_tot + c_area
-                pct_area = round((c_area / denom_area * 100), 1) if denom_area > 0 else 0.0
-                data_areas.append({"Area": area, "Volumen": c_area, "Pct": pct_area})
+                if c_area > 0: 
+                    denom_area = c_contactado_tot + c_area
+                    pct_area = round((c_area / denom_area * 100), 1) if denom_area > 0 else 0.0
+                    area_stats[area] = {'total': c_area, 'pct': pct_area}
         
-        if data_areas:
-            df_areas = pd.DataFrame(data_areas).sort_values("Volumen", ascending=True)
+        filtro_area = None
+        filtro_cat = None
+        
+        if area_stats:
+            sorted_areas = sorted(list(area_stats.keys()), key=lambda x: area_stats[x]['total'])
+            cat_counts_per_area = {area: df_rec_filtrado[area].value_counts() for area in sorted_areas}
+            
+            all_categories = set()
+            for counts in cat_counts_per_area.values():
+                all_categories.update(counts.index)
+            
+            list_cats = list(all_categories)
+            added_cats = [] # Mantiene el registro exacto del orden de los colores para el clic
             
             fig_bar_areas = go.Figure()
-            fig_bar_areas.add_trace(go.Bar(
-                y=df_areas['Area'], x=df_areas['Volumen'],
-                orientation='h',
-                marker=dict(color='#8B5CF6'),
-                text=df_areas.apply(lambda row: f"Vol: {row['Volumen']} | Reclamo: {row['Pct']}%", axis=1),
-                textposition='auto',
-                hovertemplate="<b>Área:</b> %{y}<br><b>Volumen:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>",
-                customdata=df_areas['Pct']
-            ))
+            
+            for cat in list_cats:
+                x_vals = []
+                customdata_pct = []
+                
+                for area in sorted_areas:
+                    count = cat_counts_per_area[area].get(cat, 0)
+                    x_vals.append(count)
+                    customdata_pct.append(area_stats[area]['pct'])
+                
+                if sum(x_vals) > 0:
+                    added_cats.append(cat)
+                    fig_bar_areas.add_trace(go.Bar(
+                        y=sorted_areas, 
+                        x=x_vals,
+                        name=str(cat),
+                        orientation='h',
+                        text=[f"{v}" if v > 0 else "" for v in x_vals],
+                        textposition='inside',
+                        hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cantidad:</b> %{x}<br><b>% Reclamo Total del Área:</b> %{customdata}%<extra></extra>",
+                        customdata=customdata_pct
+                    ))
+
             fig_bar_areas.update_layout(
-                height=350 if len(df_areas) > 3 else 250,
+                barmode='stack',
+                height=400 if len(sorted_areas) > 3 else 280,
                 margin=dict(l=20, r=20, t=20, b=20),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig_bar_areas, use_container_width=True)
+            
+            # --- CAPTURA DEL CLIC EN EL GRÁFICO ---
+            st.info("💡 **Tip interactivo:** Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
+            
+            try:
+                # Requiere Streamlit >= 1.35.0
+                chart_event = st.plotly_chart(fig_bar_areas, use_container_width=True, on_select="rerun", selection_mode="points")
+                
+                if chart_event and 'selection' in chart_event and chart_event['selection']['points']:
+                    pto = chart_event['selection']['points'][0]
+                    filtro_area = pto.get('y')
+                    curve_idx = pto.get('curveNumber')
+                    if curve_idx is not None and curve_idx < len(added_cats):
+                        filtro_cat = added_cats[curve_idx]
+            except TypeError:
+                # Fallback por si la versión de Streamlit es antigua
+                st.plotly_chart(fig_bar_areas, use_container_width=True)
+                st.warning("⚠️ Tu versión de Streamlit no soporta clics en gráficos. Actualiza ejecutando: pip install --upgrade streamlit")
+
         else:
-            st.warning("No se encontraron las columnas de áreas especificadas en la base de datos.")
+            st.warning("No se registraron datos en las columnas de áreas para el período seleccionado.")
+
+        # --- 4. TABLA DE DETALLE DE RECLAMOS OPERATIVOS (DINÁMICA) ---
+        st.markdown("---")
+        if filtro_area and filtro_cat:
+            st.markdown(f"#### 📋 Detalle de Reclamos Operativos (Filtrado: Área **'{filtro_area}'** ➔ Falla **'{filtro_cat}'**)")
+        else:
+            st.markdown("#### 📋 Detalle de Reclamos Operativos (Visualizando Todos)")
+            
+        columnas_solicitadas = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
+        columnas_encontradas = []
+        
+        for col in columnas_solicitadas:
+            col_match = next((c for c in df_rec_filtrado.columns if str(c).strip().lower() == str(col).lower()), None)
+            if col_match:
+                columnas_encontradas.append(col_match)
+                
+        if columnas_encontradas:
+            col_concat = next((c for c in columnas_encontradas if 'concat' in str(c).lower()), None)
+            df_tabla = df_rec_filtrado.copy()
+            
+            # --- APLICAMOS EL FILTRO DEL CLIC SI EL USUARIO TOCÓ EL GRÁFICO ---
+            if filtro_area and filtro_cat and filtro_area in df_tabla.columns:
+                df_tabla = df_tabla[df_tabla[filtro_area] == filtro_cat]
+            
+            df_tabla = df_tabla[columnas_encontradas]
+            
+            if col_concat:
+                df_tabla = df_tabla.dropna(subset=[col_concat])
+                
+            if len(df_tabla) > 0:
+                st.dataframe(df_tabla, use_container_width=True, hide_index=True)
+            else:
+                st.info("No hay detalles o comentarios registrados para este cruce específico.")
+        else:
+            st.info("No se encontraron las columnas solicitadas en la base de datos para armar la tabla.")
             
     else:
         st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Análisis de Reclamos.")
