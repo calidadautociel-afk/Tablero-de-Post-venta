@@ -1634,123 +1634,59 @@ with tab_reclamos:
         else:
             st.warning("Columna 'Reclamo' no encontrada.")
             
-        # --- 3. GRÁFICO DE BARRAS APILADAS POR ÁREA Y CATEGORÍA ---
+        # --- 3. GRÁFICO DE BARRAS APILADAS Y FILTRO DINÁMICO ---
         st.markdown("---")
-        st.markdown("#### 🏢 Impacto y Volumen de Reclamos por Área (Meses Seleccionados)")
+        st.markdown("#### 🏢 Impacto y Volumen de Reclamos por Área")
         
         areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
         
-        c_contactado_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
-        
-        area_stats = {}
-        for area in areas_cols:
-            if area in df_rec_filtrado.columns:
-                c_area = df_rec_filtrado[area].notna().sum()
-                if c_area > 0: 
-                    denom_area = c_contactado_tot + c_area
-                    pct_area = round((c_area / denom_area * 100), 1) if denom_area > 0 else 0.0
-                    area_stats[area] = {'total': c_area, 'pct': pct_area}
-        
-        filtro_area = None
-        filtro_cat = None
+        # Inicializar estado para el filtro
+        if 'filtro_seleccionado' not in st.session_state:
+            st.session_state.filtro_seleccionado = None
+
+        # Preparación de datos (cálculo de conteos)
+        area_stats = {area: df_rec_filtrado[area].notna().sum() for area in areas_cols if area in df_rec_filtrado.columns and df_rec_filtrado[area].notna().sum() > 0}
         
         if area_stats:
-            sorted_areas = sorted(list(area_stats.keys()), key=lambda x: area_stats[x]['total'])
-            cat_counts_per_area = {area: df_rec_filtrado[area].value_counts() for area in sorted_areas}
+            sorted_areas = sorted(area_stats.keys(), key=lambda x: area_stats[x])
+            cat_counts = {area: df_rec_filtrado[area].value_counts() for area in sorted_areas}
+            all_cats = sorted(list(set().union(*[c.index for c in cat_counts.values()])))
             
-            all_categories = set()
-            for counts in cat_counts_per_area.values():
-                all_categories.update(counts.index)
+            fig = go.Figure()
+            for cat in all_cats:
+                fig.add_trace(go.Bar(
+                    y=sorted_areas,
+                    x=[cat_counts[area].get(cat, 0) for area in sorted_areas],
+                    name=cat, orientation='h'
+                ))
             
-            # ¡CORRECCIÓN CRÍTICA 1!: "sorted" fuerza a que el orden de categorías (y colores) nunca cambie
-            list_cats = sorted(list(all_categories))
-            added_cats = [] 
+            fig.update_layout(barmode='stack', showlegend=True, height=400)
             
-            fig_bar_areas = go.Figure()
+            # Gráfico con evento de selección
+            event = st.plotly_chart(fig, on_select="rerun", key="bar_chart")
             
-            for cat in list_cats:
-                x_vals = []
-                customdata_pct = []
-                
-                for area in sorted_areas:
-                    count = cat_counts_per_area[area].get(cat, 0)
-                    x_vals.append(count)
-                    customdata_pct.append(area_stats[area]['pct'])
-                
-                if sum(x_vals) > 0:
-                    added_cats.append(cat)
-                    fig_bar_areas.add_trace(go.Bar(
-                        y=sorted_areas, 
-                        x=x_vals,
-                        name=str(cat),
-                        orientation='h',
-                        text=[f"{v}" if v > 0 else "" for v in x_vals],
-                        textposition='inside',
-                        hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cantidad:</b> %{x}<br><b>% Reclamo Total del Área:</b> %{customdata}%<extra></extra>",
-                        customdata=customdata_pct
-                    ))
+            # Lógica para capturar el clic y actualizar el estado
+            if event and event["selection"]["points"]:
+                point = event["selection"]["points"][0]
+                area_clic = point["y"]
+                cat_clic = point["data"]["name"]
+                st.session_state.filtro_seleccionado = (area_clic, cat_clic)
+                st.rerun() # Forzar actualización inmediata
+            
+            if st.button("❌ Limpiar Filtro"):
+                st.session_state.filtro_seleccionado = None
+                st.rerun()
 
-            fig_bar_areas.update_layout(
-                barmode='stack',
-                height=400 if len(sorted_areas) > 3 else 280,
-                margin=dict(l=20, r=20, t=20, b=20),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
-            
-            st.info("💡 **Tip interactivo:** Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
-            
-            try:
-                # ¡CORRECCIÓN CRÍTICA 2!: Agregamos key="grafico_reclamos_apilados"
-                chart_event = st.plotly_chart(fig_bar_areas, use_container_width=True, on_select="rerun", selection_mode="points", key="grafico_reclamos_apilados")
-                
-                if chart_event and 'selection' in chart_event and chart_event['selection'].get('points'):
-                    pto = chart_event['selection']['points'][0]
-                    filtro_area = pto.get('y')
-                    curve_idx = pto.get('curveNumber')
-                    if curve_idx is not None and curve_idx < len(added_cats):
-                        filtro_cat = added_cats[curve_idx]
-            except TypeError:
-                st.plotly_chart(fig_bar_areas, use_container_width=True)
-                st.warning("⚠️ Tu versión de Streamlit no soporta clics en gráficos. Actualiza ejecutando: pip install --upgrade streamlit")
-
-        else:
-            st.warning("No se registraron datos en las columnas de áreas para el período seleccionado.")
-
-        # --- 4. TABLA DE DETALLE DE RECLAMOS OPERATIVOS (DINÁMICA) ---
-        st.markdown("---")
-        if filtro_area and filtro_cat:
-            st.markdown(f"#### 📋 Detalle de Reclamos Operativos (Filtrado: Área **'{filtro_area}'** ➔ Falla **'{filtro_cat}'**)")
-        else:
-            st.markdown("#### 📋 Detalle de Reclamos Operativos (Visualizando Todos)")
-            
-        columnas_solicitadas = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
-        columnas_encontradas = []
+        # --- 4. TABLA DE DETALLE (FILTRADA POR ESTADO) ---
+        st.markdown("#### 📋 Detalle de Reclamos Operativos")
         
-        for col in columnas_solicitadas:
-            col_match = next((c for c in df_rec_filtrado.columns if str(c).strip().lower() == str(col).lower()), None)
-            if col_match:
-                columnas_encontradas.append(col_match)
-                
-        if columnas_encontradas:
-            col_concat = next((c for c in columnas_encontradas if 'concat' in str(c).lower()), None)
-            df_tabla = df_rec_filtrado.copy()
+        df_display = df_rec_filtrado.copy()
+        if st.session_state.filtro_seleccionado:
+            area_f, cat_f = st.session_state.filtro_seleccionado
+            st.info(f"Filtrando por: **{area_f}** > **{cat_f}**")
+            df_display = df_display[df_display[area_f] == cat_f]
             
-            # --- APLICAMOS EL FILTRO DEL CLIC ---
-            if filtro_area and filtro_cat and filtro_area in df_tabla.columns:
-                df_tabla = df_tabla[df_tabla[filtro_area] == filtro_cat]
-            
-            df_tabla = df_tabla[columnas_encontradas]
-            
-            if col_concat:
-                df_tabla = df_tabla.dropna(subset=[col_concat])
-                
-            if len(df_tabla) > 0:
-                st.dataframe(df_tabla, use_container_width=True, hide_index=True)
-            else:
-                st.info("No hay detalles o comentarios registrados para este cruce específico.")
-        else:
-            st.info("No se encontraron las columnas solicitadas en la base de datos para armar la tabla.")
-            
-    else:
-        st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Análisis de Reclamos.")
+        cols_mostrar = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
+        # Filtrar solo columnas existentes
+        cols_presentes = [c for c in cols_mostrar if c in df_display.columns]
+        st.dataframe(df_display[cols_presentes], use_container_width=True)
