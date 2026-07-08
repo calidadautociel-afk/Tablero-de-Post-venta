@@ -38,7 +38,6 @@ st.markdown("""
         border-color: #1E293B;
     }
     
-    /* Separador vertical para pantallas divididas */
     .vertical-divider {
         border-left: 2px solid #E2E8F0;
         height: 100%;
@@ -59,8 +58,6 @@ MESES_ES = {
     1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
     7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
 }
-
-# Mapeo de meses en formato corto
 MESES_SHORT = {
     1: "ene", 2: "feb", 3: "mar", 4: "abr", 5: "may", 6: "jun",
     7: "jul", 8: "ago", 9: "sep", 10: "oct", 11: "nov", 12: "dic"
@@ -116,76 +113,85 @@ except Exception as e:
 col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' in col), None)
 col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
 
+# --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA ---
+def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
+    hoy = datetime.date.today()
+    mes_actual_nombre = MESES_ES.get(hoy.month, "Enero")
+    año_actual = hoy.year
+
+    # Listas disponibles
+    anios_disp = sorted(df_m_raw['Año'].unique(), reverse=True) if 'Año' in df_m_raw.columns else [año_actual]
+    meses_disp = list(MESES_ES.values())
+    marcas_disp = sorted(df_m_raw['Marca'].dropna().unique()) if 'Marca' in df_m_raw.columns else []
+
+    # Búsqueda segura del mes default (último disponible si el actual no tiene datos)
+    meses_existentes = df_m_raw[df_m_raw['Año'] == (anios_disp[0] if anios_disp else año_actual)]['Mes'].unique()
+    default_mes = [mes_actual_nombre] if mes_actual_nombre in meses_existentes else (meses_existentes[:1].tolist() if len(meses_existentes)>0 else [mes_actual_nombre])
+
+    # Inicializar Session State para esta pestaña específica
+    if f'{key_prefix}_anio' not in st.session_state:
+        st.session_state[f'{key_prefix}_anio'] = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
+    if f'{key_prefix}_mes' not in st.session_state:
+        st.session_state[f'{key_prefix}_mes'] = default_mes
+    if f'{key_prefix}_marca' not in st.session_state:
+        st.session_state[f'{key_prefix}_marca'] = marcas_disp[:1] if marcas_disp else []
+
+    # Renderizado de UI de Filtros
+    with st.expander("⚙️ Filtros de visualización (Clic para editar)", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
+        with c2:
+            sel_meses = st.multiselect("Seleccione Mes(es)", meses_disp, key=f'{key_prefix}_mes')
+        with c3:
+            sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
+
+    # Aplicación de los filtros a los DataFrames
+    df_m_filt = df_m_raw[df_m_raw['Año'].isin(sel_años) & df_m_raw['Mes'].isin(sel_meses)]
+    df_i_filt = df_i_raw[df_i_raw['Año'].isin(sel_años) & df_i_raw['Mes'].isin(sel_meses)]
+
+    if sel_marcas:
+        if 'Marca' in df_m_filt.columns: df_m_filt = df_m_filt[df_m_filt['Marca'].isin(sel_marcas)]
+        if 'Marca' in df_i_filt.columns: df_i_filt = df_i_filt[df_i_filt['Marca'].isin(sel_marcas)]
+
+    return df_m_filt, df_i_filt, sel_meses
+
 # --- CÁLCULOS MÉTRICAS ---
 def calcular_metricas_nps(df, columna):
-    if columna not in df.columns:
-        return 0.0, 0, 0, 0
-    
+    if columna not in df.columns: return 0.0, 0, 0, 0
     valores = pd.to_numeric(df[columna], errors='coerce').dropna()
     total = len(valores)
-    
-    if total == 0:
-        return 0.0, 0, 0, 0
-    
+    if total == 0: return 0.0, 0, 0, 0
     promotores = len(valores[valores >= 9])
     detractores = len(valores[valores <= 6])
     neutros = len(valores[(valores >= 7) & (valores <= 8)])
-    
     pct_promotores = (promotores / total) * 100
     pct_detractores = (detractores / total) * 100
-    
-    nps_score = pct_promotores - pct_detractores
-    nps_score = max(0.0, round(nps_score, 1))
-    
+    nps_score = max(0.0, round(pct_promotores - pct_detractores, 1))
     return nps_score, promotores, neutros, detractores
 
 def calcular_promedio(df, columna):
-    if columna not in df.columns:
-        return 0.0
-    
-    if df[columna].dtype == object:
-        s_limpia = df[columna].astype(str).str.replace(',', '.')
-    else:
-        s_limpia = df[columna]
-        
+    if columna not in df.columns: return 0.0
+    s_limpia = df[columna].astype(str).str.replace(',', '.') if df[columna].dtype == object else df[columna]
     valores = pd.to_numeric(s_limpia, errors='coerce').dropna()
     valores = valores[(valores > 0) & (valores <= 10)]
-    
-    if len(valores) == 0:
-        return 0.0
-        
+    if len(valores) == 0: return 0.0
     return round(valores.mean() * 10, 1)
 
 # --- VELOCÍMETROS ---
 def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
-    if is_promedio:
-        color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 80 else '#EF4444')
-    else:
-        color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= 70 else '#EF4444')
-
+    color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= (80 if is_promedio else 70) else '#EF4444')
     font_size = 20 if mini else 42
-
     fig = go.Figure(go.Indicator(
-        mode="gauge+number",
-        value=score, 
+        mode="gauge+number", value=score, 
         number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, 
-        gauge={
-            'axis': {'range': [0, 100], 'showticklabels': False}, 
-            'bar': {'color': color_bar, 'thickness': 0.15},
-            'bgcolor': "#F1F5F9",
-            'borderwidth': 0,
-        }
+        gauge={'axis': {'range': [0, 100], 'showticklabels': False}, 'bar': {'color': color_bar, 'thickness': 0.15}, 'bgcolor': "#F1F5F9", 'borderwidth': 0}
     ))
-    
     height_chart = 130 if mini else 240
     margin_bottom = 0 if mini else 10
-    
     fig.update_layout(
         title={'text': f"<b>{titulo}</b>", 'y': 0.85, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12 if mini else 14, 'color': '#475569'}},
-        margin=dict(l=20, r=20, t=40, b=margin_bottom),
-        height=height_chart,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
+        margin=dict(l=20, r=20, t=40, b=margin_bottom), height=height_chart, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
     )
     return fig
 
@@ -195,87 +201,72 @@ def crear_torta(df, columna, titulo):
         fig = go.Figure()
         fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.85, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, height=160, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         return fig
-        
     datos = df[columna].value_counts()
     fig = go.Figure(data=[go.Pie(labels=datos.index, values=datos.values, hole=.5, textinfo='label+percent', textposition='inside', insidetextorientation='radial')])
-    
-    fig.update_layout(
-        title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, 
-        margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-    )
+    fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
     return fig
 
-# --- FUNCIÓN GENERADORA DE REPORTE PDF (CON GRÁFICOS) ---
+# --- FUNCIÓN GENERADORA DE REPORTE PDF ---
 def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Encabezado Principal
     pdf.set_font("Helvetica", "B", 16)
-    pdf.set_text_color(30, 41, 59) # Tono oscuro #1E293B
+    pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 10, "REPORTE CONSOLIDADO DE CALIDAD POSVENTA", ln=True, align="C")
     
     pdf.set_font("Helvetica", "", 11)
     pdf.set_text_color(100, 116, 139)
-    meses_str = ", ".join(meses_seleccionados)
+    meses_str = ", ".join(meses_seleccionados) if meses_seleccionados else "Todos"
     pdf.cell(0, 6, f"Periodo: {meses_str} | Empresa: Autociel", ln=True, align="C")
     pdf.ln(5)
-    
-    # Línea divisoria
     pdf.set_draw_color(226, 232, 240)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(6)
     
-    # --- SECCIÓN 1: MONITOR GLOBAL (CON GRÁFICOS) ---
+    # SECCIÓN 1
     pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(37, 99, 235) # Azul oficial
+    pdf.set_text_color(37, 99, 235)
     pdf.cell(0, 8, "1. Monitor Global Comparativo", ln=True)
     pdf.ln(2)
     
-    # Cálculos de métricas
     score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_m, "Q1 - Satisfacción general")
     score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_m, "Q2 - Recomendación - taller")
     prom_int = calcular_promedio(df_i, "Promedio")
     score_int_nps, p_i, n_i, d_i = calcular_metricas_nps(df_i, "1-NPS")
     
-    # Generar gráficos en memoria
     fig_q1 = crear_velocimetro(score_q1, "SATISFACCION MARCA")
     fig_q2 = crear_velocimetro(score_q2, "RECOMENDACION MARCA")
     fig_int_prom = crear_velocimetro(prom_int, "SATISFACCION INTERNA", is_promedio=True)
     fig_int_nps = crear_velocimetro(score_int_nps, "RECOMENDACION INTERNA")
     
-    # Transformar a imágenes (PNG)
     img_q1 = io.BytesIO(fig_q1.to_image(format="png", width=400, height=250))
     img_q2 = io.BytesIO(fig_q2.to_image(format="png", width=400, height=250))
     img_int_prom = io.BytesIO(fig_int_prom.to_image(format="png", width=400, height=250))
     img_int_nps = io.BytesIO(fig_int_nps.to_image(format="png", width=400, height=250))
     
-    # Insertar Fila 1 de imágenes (Marca)
     y_actual = pdf.get_y()
     pdf.image(img_q1, x=15, y=y_actual, w=85)
     pdf.image(img_q2, x=105, y=y_actual, w=85)
-    pdf.ln(50) # Bajar el cursor debajo de las imágenes
+    pdf.ln(50)
     
-    # Info de Muestra Fila 1
     pdf.set_font("Helvetica", "", 9)
     pdf.set_text_color(100, 116, 139)
     pdf.cell(90, 5, f"Muestra: {p_q1+n_q1+d_q1} | Prom: {p_q1} | Neu: {n_q1} | Det: {d_q1}", align="C")
     pdf.cell(90, 5, f"Muestra: {p_q2+n_q2+d_q2} | Prom: {p_q2} | Neu: {n_q2} | Det: {d_q2}", align="C", ln=True)
     pdf.ln(5)
 
-    # Insertar Fila 2 de imágenes (Interna)
     y_actual = pdf.get_y()
     pdf.image(img_int_prom, x=15, y=y_actual, w=85)
     pdf.image(img_int_nps, x=105, y=y_actual, w=85)
     pdf.ln(50)
     
-    # Info de Muestra Fila 2
     pdf.cell(90, 5, "Promedio s/ encuestas", align="C")
     pdf.cell(90, 5, f"Muestra: {p_i+n_i+d_i} | Prom: {p_i} | Neu: {n_i} | Det: {d_i}", align="C", ln=True)
     pdf.ln(10)
     
-    # --- SECCIÓN 2: RANKING OFICIAL DE ASESORES ---
+    # SECCIÓN 2
     pdf.set_font("Helvetica", "B", 13)
     pdf.set_text_color(30, 41, 59)
     pdf.cell(0, 8, "2. Ranking Oficial de Asesores (Base Marca)", ln=True)
@@ -314,12 +305,11 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
             pdf.cell(28, 7, f"{nps_q2}%", border=1, align="C")
             pdf.cell(28, 7, f"{nps_q7}%", border=1, align="C")
             pdf.cell(61, 7, meta_str, border=1, align="C", ln=True)
-    
     pdf.ln(6)
     
-    # --- SECCIÓN 3: ALERTAS DE QUEJAS ---
+    # SECCIÓN 3
     pdf.set_font("Helvetica", "B", 13)
-    pdf.set_text_color(219, 68, 68) # Rojo de alerta
+    pdf.set_text_color(219, 68, 68)
     pdf.cell(0, 8, "3. Alertas Detractoras Recientes (<= 6)", ln=True)
     pdf.ln(2)
     
@@ -349,47 +339,34 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
             
     return bytes(pdf.output())   
 
+
 # ==============================================================================
-# PANEL LATERAL DE FILTROS GLOBALES
+# PANEL LATERAL EXCLUSIVO DE REPORTES PDF
 # ==============================================================================
-st.sidebar.header("Filtros Globales")
-
-years_available = sorted(df_marca_raw['Año'].unique(), reverse=True)
-selected_years = st.sidebar.multiselect("Año", options=years_available, default=years_available[:1])
-
-months_available = list(MESES_ES.values())
-existing_months = df_marca_raw[df_marca_raw['Año'].isin(selected_years)]['Mes'].unique()
-selected_months = st.sidebar.multiselect("Seleccione Mes(es)", options=months_available, default=[m for m in months_available if m in existing_months][:1])
-
-if 'Marca' in df_marca_raw.columns:
-    marcas_available = sorted(df_marca_raw['Marca'].dropna().unique())
-    selected_marcas = st.sidebar.multiselect("MARCA", options=marcas_available, default=marcas_available[:1] if marcas_available else [])
-else:
-    selected_marcas = []
-
-# APLICAR FILTROS A AMBAS BASES
-df_filtrado = df_marca_raw[df_marca_raw['Año'].isin(selected_years) & df_marca_raw['Mes'].isin(selected_months)]
-df_interna_filtrado = df_int_raw[df_int_raw['Año'].isin(selected_years) & df_int_raw['Mes'].isin(selected_months)]
-
-if selected_marcas:
-    if 'Marca' in df_filtrado.columns: df_filtrado = df_filtrado[df_filtrado['Marca'].isin(selected_marcas)]
-    if 'Marca' in df_interna_filtrado.columns: df_interna_filtrado = df_interna_filtrado[df_interna_filtrado['Marca'].isin(selected_marcas)]
-
-# --- BLOQUE DE EXPORTACIÓN PDF (AL FINAL DEL PANEL LATERAL) ---
-st.sidebar.markdown("---")
 st.sidebar.subheader("📦 Reporte Consolidado")
+st.sidebar.caption("El reporte tomará los filtros configurados en la pestaña 'Monitor Global'.")
 
 if st.sidebar.button("⚙️ Pre-renderizar Informe PDF"):
     try:
+        # Reconstruimos los filtros globales en base al estado del Monitor
+        sel_años_pdf = st.session_state.get('monitor_anio', [datetime.date.today().year])
+        sel_meses_pdf = st.session_state.get('monitor_mes', [MESES_ES.get(datetime.date.today().month, "Enero")])
+        sel_marcas_pdf = st.session_state.get('monitor_marca', [])
+        
+        df_pdf_m = df_marca_raw[df_marca_raw['Año'].isin(sel_años_pdf) & df_marca_raw['Mes'].isin(sel_meses_pdf)]
+        df_pdf_i = df_int_raw[df_int_raw['Año'].isin(sel_años_pdf) & df_int_raw['Mes'].isin(sel_meses_pdf)]
+        
+        if sel_marcas_pdf:
+            if 'Marca' in df_pdf_m.columns: df_pdf_m = df_pdf_m[df_pdf_m['Marca'].isin(sel_marcas_pdf)]
+            if 'Marca' in df_pdf_i.columns: df_pdf_i = df_pdf_i[df_pdf_i['Marca'].isin(sel_marcas_pdf)]
+
         with st.sidebar.spinner("Compilando datos de todas las areas..."):
-            data_pdf = generar_reporte_pdf_bytes(df_filtrado, df_interna_filtrado, selected_months)
+            data_pdf = generar_reporte_pdf_bytes(df_pdf_m, df_pdf_i, sel_meses_pdf)
             
         st.sidebar.success("¡Reporte listo!")
         st.sidebar.download_button(
-            label="📥 Descargar Reporte PDF",
-            data=data_pdf,
-            file_name=f"Reporte_Calidad_Autociel_{'_'.join(selected_months)}.pdf",
-            mime="application/pdf"
+            label="📥 Descargar Reporte PDF", data=data_pdf,
+            file_name=f"Reporte_Calidad_Autociel_{'_'.join(sel_meses_pdf)}.pdf", mime="application/pdf"
         )
     except Exception as e:
         st.sidebar.error(f"Error al estructurar el PDF: {e}")
@@ -401,7 +378,7 @@ st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-it
 st.markdown("<br>", unsafe_allow_html=True)
 
 # ==============================================================================
-# PESTAÑAS PRINCIPALES (Añadido "Análisis de Reclamos")
+# PESTAÑAS PRINCIPALES
 # ==============================================================================
 tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_prima, tab_reclamos = st.tabs([
     "🏠 Monitor Global Comparativo", 
@@ -418,7 +395,8 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_
 # 1. MONITOR GLOBAL COMPARATIVO
 # ------------------------------------------------------------------------------
 with tab_monitor:
-    st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(selected_months)}</div>", unsafe_allow_html=True)
+    df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
+    st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(meses_sel_t1)}</div>", unsafe_allow_html=True)
     
     col_izq, col_der = st.columns(2)
     
@@ -429,7 +407,7 @@ with tab_monitor:
             st.markdown("---")
             col_q1, col_q2 = st.columns(2)
             with col_q1:
-                score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_filtrado, "Q1 - Satisfacción general")
+                score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_m1, "Q1 - Satisfacción general")
                 st.plotly_chart(crear_velocimetro(score_q1, "Q1 - SATISFACCIÓN (NPS)"), use_container_width=True)
                 sub_c1, sub_c2, sub_c3 = st.columns(3)
                 with sub_c1: st.button(f"😄 {p_q1}", key="btn_m_p1", on_click=set_filtro_marca, args=('Promotor',))
@@ -437,7 +415,7 @@ with tab_monitor:
                 with sub_c3: st.button(f"😠 {d_q1}", key="btn_m_d1", on_click=set_filtro_marca, args=('Detractor',))
 
             with col_q2:
-                score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_filtrado, "Q2 - Recomendación - taller")
+                score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_m1, "Q2 - Recomendación - taller")
                 st.plotly_chart(crear_velocimetro(score_q2, "Q2 - RECOMENDACIÓN (NPS)"), use_container_width=True)
                 sub_c4, sub_c5, sub_c6 = st.columns(3)
                 with sub_c4: st.button(f"😄 {p_q2}", key="btn_m_p2", on_click=set_filtro_marca, args=('Promotor',))
@@ -448,21 +426,21 @@ with tab_monitor:
             subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
             with subtab_agendamiento:
                 c1, c2 = st.columns(2)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q6 - Satisfacción instalaciones")[0], "Q6 - Instalaciones", mini=True), use_container_width=True)
+                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
+                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q6 - Satisfacción instalaciones")[0], "Q6 - Instalaciones", mini=True), use_container_width=True)
             with subtab_asesor:
                 c1, c2, c3, c4 = st.columns(4)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q7 - Cortesía y Amabilidad")[0], "Q7 - Cortesía", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q8 - Competencia Asesor de Servicio")[0], "Q8 - Competencia", mini=True), use_container_width=True)
-                with c3: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto", mini=True), use_container_width=True)
-                with c4: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q11 - Explicación trabajo - costo")[0], "Q11 - Expl. Trabajo", mini=True), use_container_width=True)
+                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q7 - Cortesía y Amabilidad")[0], "Q7 - Cortesía", mini=True), use_container_width=True)
+                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q8 - Competencia Asesor de Servicio")[0], "Q8 - Competencia", mini=True), use_container_width=True)
+                with c3: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto", mini=True), use_container_width=True)
+                with c4: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q11 - Explicación trabajo - costo")[0], "Q11 - Expl. Trabajo", mini=True), use_container_width=True)
             with subtab_taller:
                 c1, c2, c3 = st.columns(3)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q12 - Calidad del trabajo")[0], "Q12 - Calidad", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_torta(df_filtrado, col_q13, "Q13 - FIR"), use_container_width=True)
-                with c3: st.plotly_chart(crear_torta(df_filtrado, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
+                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q12 - Calidad del trabajo")[0], "Q12 - Calidad", mini=True), use_container_width=True)
+                with c2: st.plotly_chart(crear_torta(df_m1, col_q13, "Q13 - FIR"), use_container_width=True)
+                with c3: st.plotly_chart(crear_torta(df_m1, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
             with subtab_contacto:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_filtrado, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
+                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
 
     # === LADO DERECHO: INTERNA ===
     with col_der:
@@ -471,11 +449,11 @@ with tab_monitor:
             st.markdown("---")
             col_i1, col_i2 = st.columns(2)
             with col_i1:
-                score_i1 = calcular_promedio(df_interna_filtrado, "Promedio")
+                score_i1 = calcular_promedio(df_i1, "Promedio")
                 st.plotly_chart(crear_velocimetro(score_i1, "SATISFACCIÓN (Promedio)", is_promedio=True), use_container_width=True)
                 
             with col_i2:
-                score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_interna_filtrado, "1-NPS")
+                score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_i1, "1-NPS")
                 st.plotly_chart(crear_velocimetro(score_i2, "RECOMENDACIÓN (NPS)"), use_container_width=True)
                 sub_i4, sub_i5, sub_i6 = st.columns(3)
                 with sub_i4: st.button(f"😄 {p_i2}", key="btn_i_p2", on_click=set_filtro_int, args=('Promotor',))
@@ -485,17 +463,17 @@ with tab_monitor:
             st.markdown("<br>", unsafe_allow_html=True)
             subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
             with subtab_agend_int:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
+                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
             with subtab_asesor_int:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "4-Atención de necesidades")[0], "4-Atención necesidades", mini=True), use_container_width=True)
+                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "4-Atención de necesidades")[0], "4-Atención necesidades", mini=True), use_container_width=True)
             with subtab_taller_int:
                 c1, c2 = st.columns(2)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "6-Calidad de trabajo")[0], "6-Calidad trabajo", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "7-Limpieza del vehículo")[0], "7-Limpieza", mini=True), use_container_width=True)
+                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "6-Calidad de trabajo")[0], "6-Calidad trabajo", mini=True), use_container_width=True)
+                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "7-Limpieza del vehículo")[0], "7-Limpieza", mini=True), use_container_width=True)
             with subtab_contacto_int:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_interna_filtrado, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
+                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
 
-    # === TABLA GLOBAL DE COMENTARIOS DOBLE (RECUADROS) ===
+    # === TABLA GLOBAL DE COMENTARIOS DOBLE ===
     st.markdown("---")
     st.markdown("### 💬 Comentarios de Clientes")
     col_com_m, col_com_i = st.columns(2)
@@ -503,11 +481,9 @@ with tab_monitor:
     with col_com_m:
         with st.container(border=True):
             st.markdown(f"**🏢 Marca (Filtro: {st.session_state.filtro_comentarios_marca})**")
-            if st.session_state.filtro_comentarios_marca != 'Todos':
-                st.button("🔄 Ver Todos (Marca)", on_click=set_filtro_marca, args=('Todos',))
-            
-            if "Q3 - Verbalización" in df_filtrado.columns:
-                df_com_m = df_filtrado.copy()
+            if st.session_state.filtro_comentarios_marca != 'Todos': st.button("🔄 Ver Todos (Marca)", on_click=set_filtro_marca, args=('Todos',))
+            if "Q3 - Verbalización" in df_m1.columns:
+                df_com_m = df_m1.copy()
                 if st.session_state.filtro_comentarios_marca != 'Todos':
                     q_base = pd.to_numeric(df_com_m["Q1 - Satisfacción general"], errors='coerce')
                     if st.session_state.filtro_comentarios_marca == 'Promotor': df_com_m = df_com_m[q_base >= 9]
@@ -516,12 +492,7 @@ with tab_monitor:
                     
                 col_nombre_m = 'Nombre Principal' if 'Nombre Principal' in df_com_m.columns else next((c for c in df_com_m.columns if 'Nombre' in c or 'Cliente' in c), None)
                 col_fecha_m = 'Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_com_m.columns else next((c for c in df_com_m.columns if 'Fecha' in c), None)
-                
-                cols_m = []
-                if col_nombre_m: cols_m.append(col_nombre_m)
-                if col_fecha_m: cols_m.append(col_fecha_m)
-                if "Marca" in df_com_m.columns: cols_m.append("Marca")
-                cols_m.append("Q3 - Verbalización")
+                cols_m = [c for c in [col_nombre_m, col_fecha_m, "Marca"] if c and c in df_com_m.columns] + ["Q3 - Verbalización"]
                 
                 cm_view = df_com_m[cols_m].dropna(subset=["Q3 - Verbalización"])
                 if len(cm_view) > 0: st.dataframe(cm_view, use_container_width=True, hide_index=True)
@@ -530,11 +501,9 @@ with tab_monitor:
     with col_com_i:
         with st.container(border=True):
             st.markdown(f"**🎯 Interna (Filtro: {st.session_state.filtro_comentarios_int})**")
-            if st.session_state.filtro_comentarios_int != 'Todos':
-                st.button("🔄 Ver Todos (Interna)", on_click=set_filtro_int, args=('Todos',))
-                
-            if "CONCATENADO" in df_interna_filtrado.columns:
-                df_com_i = df_interna_filtrado.copy()
+            if st.session_state.filtro_comentarios_int != 'Todos': st.button("🔄 Ver Todos (Interna)", on_click=set_filtro_int, args=('Todos',))
+            if "CONCATENADO" in df_i1.columns:
+                df_com_i = df_i1.copy()
                 if st.session_state.filtro_comentarios_int != 'Todos':
                     qi_base = pd.to_numeric(df_com_i["1-NPS"], errors='coerce')
                     if st.session_state.filtro_comentarios_int == 'Promotor': df_com_i = df_com_i[qi_base >= 9]
@@ -542,20 +511,9 @@ with tab_monitor:
                     elif st.session_state.filtro_comentarios_int == 'Detractor': df_com_i = df_com_i[qi_base <= 6]
                 
                 col_nombre_i = 'Cliente' if 'Cliente' in df_com_i.columns else next((c for c in df_com_i.columns if 'Nombre' in c), None)
+                col_fecha_i = 'Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_com_i.columns else next((c for c in df_com_i.columns if 'Fecha' in c), None)
                 
-                if 'Fecha de la Encuesta' in df_com_i.columns:
-                    col_fecha_i = 'Fecha de la Encuesta'
-                elif 'Marca temporal' in df_com_i.columns:
-                    col_fecha_i = 'Marca temporal'
-                else:
-                    col_fecha_i = next((c for c in df_com_i.columns if 'Fecha' in c and 'Cierre' not in c), None)
-                
-                cols_i = []
-                if col_nombre_i: cols_i.append(col_nombre_i)
-                if col_fecha_i: cols_i.append(col_fecha_i)
-                if "Marca" in df_com_i.columns: cols_i.append("Marca")
-                cols_i.append("CONCATENADO")
-                
+                cols_i = [c for c in [col_nombre_i, col_fecha_i, "Marca"] if c and c in df_com_i.columns] + ["CONCATENADO"]
                 ci_view = df_com_i[cols_i].dropna(subset=["CONCATENADO"])
                 if len(ci_view) > 0: st.dataframe(ci_view, use_container_width=True, hide_index=True)
                 else: st.info("Sin comentarios para este segmento.")
@@ -565,18 +523,16 @@ with tab_monitor:
 # ------------------------------------------------------------------------------
 with tab_tabla:
     st.markdown("### Ranking de Desempeño General de Asesores")
-    
+    df_t2_m, df_t2_i, _ = render_filtros_pestaña(df_marca_raw, df_int_raw, "tabla_asesores")
     subtab_rk_marca, subtab_rk_int = st.tabs(["🏆 Ranking Oficial (Marca)", "🎯 Ranking Interno"])
     
-    # --- RANKING MARCA ---
     with subtab_rk_marca:
-        col_asesor_key = next((col for col in df_filtrado.columns if 'Asesor' in col), None)
+        col_asesor_key = next((col for col in df_t2_m.columns if 'Asesor' in col), None)
         if col_asesor_key:
-            asesores = df_filtrado[col_asesor_key].dropna().unique()
+            asesores = df_t2_m[col_asesor_key].dropna().unique()
             ranking_data = []
-            
             for p_asesor in asesores:
-                df_ase = df_filtrado[df_filtrado[col_asesor_key] == p_asesor]
+                df_ase = df_t2_m[df_t2_m[col_asesor_key] == p_asesor]
                 nps_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_ase, "Q2 - Recomendación - taller")
                 nps_q7, _, _, _ = calcular_metricas_nps(df_ase, "Q7 - Cortesía y Amabilidad")
                 nps_q8, _, _, _ = calcular_metricas_nps(df_ase, "Q8 - Competencia Asesor de Servicio")
@@ -584,77 +540,49 @@ with tab_tabla:
                 nps_q11, _, _, _ = calcular_metricas_nps(df_ase, "Q11 - Explicación trabajo - costo")
                 
                 t_validos = p_q2 + n_q2 + d_q2
-                if nps_q2 >= 94.0:
-                    meta_str = "✅ Alcanzado"
-                elif t_validos > 0:
-                    faltantes = math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0)
-                    faltantes = max(0, faltantes)
-                    meta_str = f"Faltan {faltantes} Promotor{'es' if faltantes != 1 else ''}"
-                else:
-                    meta_str = "Sin datos"
+                if nps_q2 >= 94.0: meta_str = "✅ Alcanzado"
+                elif t_validos > 0: meta_str = f"Faltan {max(0, math.ceil((94 * t_validos - 100 * (p_q2 - d_q2)) / 6.0))} Prom."
+                else: meta_str = "Sin datos"
                 
                 ranking_data.append({
-                    "Asesor de Servicio": p_asesor,
-                    "Muestra": len(df_ase),
-                    "NPS Q2 (Recomendación)": nps_q2,
-                    "NPS Q7 (Cortesía)": nps_q7,
-                    "NPS Q8 (Competencia)": nps_q8,
-                    "NPS Q10 (Presupuesto)": nps_q10,
-                    "NPS Q11 (Trabajo/Costo)": nps_q11,
-                    "Meta 94%": meta_str
+                    "Asesor de Servicio": p_asesor, "Muestra": len(df_ase), "NPS Q2 (Recomendación)": nps_q2,
+                    "NPS Q7 (Cortesía)": nps_q7, "NPS Q8 (Competencia)": nps_q8, "NPS Q10 (Presupuesto)": nps_q10,
+                    "NPS Q11 (Trabajo/Costo)": nps_q11, "Meta 94%": meta_str
                 })
                 
-            if len(ranking_data) > 0:
-                df_ranking = pd.DataFrame(ranking_data).sort_values(by="NPS Q2 (Recomendación)", ascending=False)
-                st.dataframe(df_ranking, use_container_width=True, hide_index=True)
-            else:
-                st.info("📊 Aún no se registran encuestas oficiales para el período seleccionado.")
+            if ranking_data: st.dataframe(pd.DataFrame(ranking_data).sort_values("NPS Q2 (Recomendación)", ascending=False), use_container_width=True, hide_index=True)
+            else: st.info("📊 Aún no se registran encuestas oficiales para el período seleccionado.")
         else:
             st.warning("Columna de Asesor no encontrada en la base de la Marca.")
             
-    # --- RANKING INTERNO ---
     with subtab_rk_int:
-        col_asesor_int = "Asesor" if "Asesor" in df_interna_filtrado.columns else None
-        
+        col_asesor_int = "Asesor" if "Asesor" in df_t2_i.columns else None
         if col_asesor_int:
-            asesores_int = df_interna_filtrado[col_asesor_int].dropna().unique()
             ranking_data_int = []
-            
-            for p_asesor in asesores_int:
-                df_ase_i = df_interna_filtrado[df_interna_filtrado[col_asesor_int] == p_asesor]
-                
-                nps_rec_i, _, _, _ = calcular_metricas_nps(df_ase_i, "1-NPS")
-                prom_i = calcular_promedio(df_ase_i, "Promedio")
-                nps_turno, _, _, _ = calcular_metricas_nps(df_ase_i, "2-Obtener turno")
-                nps_atencion, _, _, _ = calcular_metricas_nps(df_ase_i, "4-Atención de necesidades")
-                nps_calidad, _, _, _ = calcular_metricas_nps(df_ase_i, "6-Calidad de trabajo")
-                nps_limpieza, _, _, _ = calcular_metricas_nps(df_ase_i, "7-Limpieza del vehículo")
-                
+            for p_asesor in df_t2_i[col_asesor_int].dropna().unique():
+                df_ase_i = df_t2_i[df_t2_i[col_asesor_int] == p_asesor]
                 ranking_data_int.append({
-                    "Asesor de Servicio": p_asesor,
-                    "Muestra": len(df_ase_i),
-                    "Recomendación (1-NPS)": nps_rec_i,
-                    "Satisfacción (Promedio)": prom_i,
-                    "Turno (NPS)": nps_turno,
-                    "Atención (NPS)": nps_atencion,
-                    "Calidad Trabajo (NPS)": nps_calidad,
-                    "Limpieza (NPS)": nps_limpieza
+                    "Asesor de Servicio": p_asesor, "Muestra": len(df_ase_i),
+                    "Recomendación (1-NPS)": calcular_metricas_nps(df_ase_i, "1-NPS")[0],
+                    "Satisfacción (Promedio)": calcular_promedio(df_ase_i, "Promedio"),
+                    "Turno (NPS)": calcular_metricas_nps(df_ase_i, "2-Obtener turno")[0],
+                    "Atención (NPS)": calcular_metricas_nps(df_ase_i, "4-Atención de necesidades")[0],
+                    "Calidad Trabajo (NPS)": calcular_metricas_nps(df_ase_i, "6-Calidad de trabajo")[0],
+                    "Limpieza (NPS)": calcular_metricas_nps(df_ase_i, "7-Limpieza del vehículo")[0]
                 })
                 
-            if len(ranking_data_int) > 0:
-                df_ranking_int = pd.DataFrame(ranking_data_int).sort_values(by="Recomendación (1-NPS)", ascending=False)
-                st.dataframe(df_ranking_int, use_container_width=True, hide_index=True)
-            else:
-                st.info("🎯 Aún no se registran encuestas internas para el período seleccionado.")
+            if ranking_data_int: st.dataframe(pd.DataFrame(ranking_data_int).sort_values("Recomendación (1-NPS)", ascending=False), use_container_width=True, hide_index=True)
+            else: st.info("🎯 Aún no se registran encuestas internas para el período seleccionado.")
         else:
-            st.warning("La columna 'Asesor' no se encontró en la base de datos Interna.")
+            st.warning("La columna 'Asesor' no se encontró en la base Interna.")
 
 # ------------------------------------------------------------------------------
 # 3. FICHA HISTÓRICA POR ASESOR
 # ------------------------------------------------------------------------------
 with tab_ficha:
     st.markdown("### Evolución Histórica de Calidad (Cruce Marca vs Interna)")
-    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Esta sección analiza el historial completo de cada asesor. Cruza el rendimiento oficial de la Marca frente a la evaluación Interna del concesionario.</p>", unsafe_allow_html=True)
+    st.markdown("<p style='font-size: 14px; color: #64748B; margin-top:-10px;'>Filtra el rango de datos para los KPI superiores. El gráfico evolutivo muestra el historial completo.</p>", unsafe_allow_html=True)
+    df_t3_m, df_t3_i, _ = render_filtros_pestaña(df_marca_raw, df_int_raw, "ficha_asesor")
     
     asesores_m = set(df_marca_raw[col_asesor_key].dropna().unique()) if col_asesor_key else set()
     asesores_i = set(df_int_raw["Asesor"].dropna().unique()) if "Asesor" in df_int_raw.columns else set()
@@ -663,1094 +591,516 @@ with tab_ficha:
     if lista_asesores_hist:
         asesor_seleccionado_hist = st.selectbox("Seleccione el Asesor de Servicio para ver su historial:", options=lista_asesores_hist)
         
-        df_hist_ase_m = df_marca_raw[df_marca_raw[col_asesor_key] == asesor_seleccionado_hist] if col_asesor_key else pd.DataFrame()
-        df_hist_ase_i = df_int_raw[df_int_raw["Asesor"] == asesor_seleccionado_hist] if "Asesor" in df_int_raw.columns else pd.DataFrame()
+        # Filtrado para KPI Acumulado (Usando el df filtrado de la pestaña)
+        df_kpi_m = df_t3_m[df_t3_m[col_asesor_key] == asesor_seleccionado_hist] if col_asesor_key else pd.DataFrame()
+        df_kpi_i = df_t3_i[df_t3_i["Asesor"] == asesor_seleccionado_hist] if "Asesor" in df_t3_i.columns else pd.DataFrame()
         
         col_kpi_m, col_kpi_i = st.columns(2)
-        
         with col_kpi_m:
             with st.container(border=True):
-                st.markdown("<h4 style='text-align:center; color:#2563EB; margin-top: 10px;'>Acumulado Marca</h4>", unsafe_allow_html=True)
+                st.markdown("<h4 style='text-align:center; color:#2563EB; margin-top: 10px;'>Acumulado Marca (Meses Sel.)</h4>", unsafe_allow_html=True)
                 k1, k2, k3 = st.columns(3)
-                with k1: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q2 - Recomendación - taller')[0]}%</div></div>", unsafe_allow_html=True)
-                with k2: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_m, 'Q1 - Satisfacción general')[0]}%</div></div>", unsafe_allow_html=True)
-                with k3: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_hist_ase_m)}</div></div>", unsafe_allow_html=True)
+                with k1: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_kpi_m, 'Q2 - Recomendación - taller')[0]}%</div></div>", unsafe_allow_html=True)
+                with k2: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_kpi_m, 'Q1 - Satisfacción general')[0]}%</div></div>", unsafe_allow_html=True)
+                with k3: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_kpi_m)}</div></div>", unsafe_allow_html=True)
 
         with col_kpi_i:
             with st.container(border=True):
-                st.markdown("<h4 style='text-align:center; color:#10B981; margin-top: 10px;'>Acumulado Interno</h4>", unsafe_allow_html=True)
+                st.markdown("<h4 style='text-align:center; color:#10B981; margin-top: 10px;'>Acumulado Interno (Meses Sel.)</h4>", unsafe_allow_html=True)
                 k4, k5, k6 = st.columns(3)
-                with k4: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_hist_ase_i, '1-NPS')[0]}%</div></div>", unsafe_allow_html=True)
-                with k5: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_promedio(df_hist_ase_i, 'Promedio')}%</div></div>", unsafe_allow_html=True)
-                with k6: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_hist_ase_i)}</div></div>", unsafe_allow_html=True)
+                with k4: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>RECOMENDACIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_metricas_nps(df_kpi_i, '1-NPS')[0]}%</div></div>", unsafe_allow_html=True)
+                with k5: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>SATISFACCIÓN</div><div class='kpi-value' style='font-size:32px;'>{calcular_promedio(df_kpi_i, 'Promedio')}%</div></div>", unsafe_allow_html=True)
+                with k6: st.markdown(f"<div class='kpi-card' style='padding:10px;'><div class='kpi-label'>MUESTRA</div><div class='kpi-value' style='font-size:32px;'>{len(df_kpi_i)}</div></div>", unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
         
+        # Filtrado histórico para el gráfico de líneas (usamos todo el raw)
         with st.container(border=True):
-            hist_data_m = {}
-            if 'Mes_Num' in df_hist_ase_m.columns:
-                for (año, mes_num), group in df_hist_ase_m.groupby(['Año', 'Mes_Num']):
-                    hist_data_m[(año, mes_num)] = calcular_metricas_nps(group, "Q2 - Recomendación - taller")[0]
-                    
-            hist_data_i = {}
-            if 'Mes_Num' in df_hist_ase_i.columns:
-                for (año, mes_num), group in df_hist_ase_i.groupby(['Año', 'Mes_Num']):
-                    hist_data_i[(año, mes_num)] = calcular_metricas_nps(group, "1-NPS")[0]
-                    
-            global_nps = {}
-            if 'Mes_Num' in df_marca_raw.columns:
-                for (año, mes), group in df_marca_raw.groupby(['Año', 'Mes_Num']):
-                    global_nps[(año, mes)] = calcular_metricas_nps(group, "Q2 - Recomendación - taller")[0]
+            df_hist_ase_m = df_marca_raw[df_marca_raw[col_asesor_key] == asesor_seleccionado_hist] if col_asesor_key else pd.DataFrame()
+            df_hist_ase_i = df_int_raw[df_int_raw["Asesor"] == asesor_seleccionado_hist] if "Asesor" in df_int_raw.columns else pd.DataFrame()
+            
+            hist_data_m = { (año, m): calcular_metricas_nps(g, "Q2 - Recomendación - taller")[0] for (año, m), g in df_hist_ase_m.groupby(['Año', 'Mes_Num']) } if 'Mes_Num' in df_hist_ase_m.columns else {}
+            hist_data_i = { (año, m): calcular_metricas_nps(g, "1-NPS")[0] for (año, m), g in df_hist_ase_i.groupby(['Año', 'Mes_Num']) } if 'Mes_Num' in df_hist_ase_i.columns else {}
+            global_nps = { (año, m): calcular_metricas_nps(g, "Q2 - Recomendación - taller")[0] for (año, m), g in df_marca_raw.groupby(['Año', 'Mes_Num']) } if 'Mes_Num' in df_marca_raw.columns else {}
 
             periodos_unicos = set(hist_data_m.keys()).union(set(hist_data_i.keys()))
-            
-            chart_data = []
-            for (año, mes_num) in periodos_unicos:
-                mes_nombre = MESES_ES.get(mes_num, "Desc")
-                chart_data.append({
-                    "Periodo": f"{mes_nombre} {año}",
-                    "Orden": año * 100 + mes_num, 
-                    "NPS_Marca": hist_data_m.get((año, mes_num), None),
-                    "NPS_Interna": hist_data_i.get((año, mes_num), None),
-                    "NPS_Global": global_nps.get((año, mes_num), None)
-                })
+            chart_data = [{"Periodo": f"{MESES_ES.get(m, 'Desc')} {a}", "Orden": a*100+m, "NPS_Marca": hist_data_m.get((a,m)), "NPS_Interna": hist_data_i.get((a,m)), "NPS_Global": global_nps.get((a,m))} for (a,m) in periodos_unicos]
                 
             if chart_data:
                 df_grafico = pd.DataFrame(chart_data).sort_values("Orden")
                 fig_line = go.Figure()
                 fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Global'], mode='lines', name='Promedio Taller (Marca)', line=dict(color='#CBD5E1', width=3), hoverinfo='skip'))
-                fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Marca'], mode='lines+markers+text', name=f'NPS Marca', line=dict(color='#1E293B', width=3), marker=dict(size=10, color='#1E293B'), text=df_grafico['NPS_Marca'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center', hovertemplate='<b>%{x}</b><br>Marca: %{y}%<extra></extra>'))
+                fig_line.add_trace(go.Scatter(x=df_grafico['Periodo'], y=df_grafico['NPS_Marca'], mode='lines+markers+text', name='NPS Marca', line=dict(color='#1E293B', width=3), marker=dict(size=10, color='#1E293B'), text=df_grafico['NPS_Marca'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center'))
                 fig_line.add_trace(go.Scatter(x=[df_grafico['Periodo'].iloc[0], df_grafico['Periodo'].iloc[-1]], y=[94, 94], mode='lines', name='Objetivo (94%)', line=dict(color='#22C55E', width=2, dash='dash'), hoverinfo='skip'))
-                fig_line.update_layout(title={'text': "Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", 'font': {'size': 16, 'color': '#1E293B'}}, yaxis=dict(title='NPS (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'), xaxis=dict(showgrid=False), margin=dict(l=40, r=40, t=60, b=40), height=450, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                fig_line.update_layout(title="Cruce Evolutivo de NPS: Evaluación Oficial vs. Evaluación Interna", yaxis=dict(title='NPS (%)', range=[0, 105]), height=450, showlegend=True, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_line, use_container_width=True)
             else:
                 st.info("No hay suficientes datos históricos para generar el gráfico.")
     else:
-        st.info("No se encontraron asesores en las bases oficales para analizar.")
+        st.info("No se encontraron asesores en las bases oficiales para analizar.")
 
 # ------------------------------------------------------------------------------
-# 4. ANÁLISIS DE CARGA OPERATIVA Y CAUSA RAÍZ (PANTALLA DIVIDIDA)
+# 4. ANÁLISIS DE CARGA OPERATIVA Y CAUSA RAÍZ
 # ------------------------------------------------------------------------------
 with tab_carga:
     st.markdown("### 📊 Análisis de Carga Operativa y Calidad")
-    
+    df_t4_m, df_t4_i, _ = render_filtros_pestaña(df_marca_raw, df_int_raw, "carga_operativa")
     col_carga_m, col_carga_i = st.columns(2)
     
-    # === LADO IZQUIERDO: MARCA ===
     with col_carga_m:
         with st.container(border=True):
             st.markdown("<h4 style='color:#2563EB;'>🏢 Causa Raíz - Marca</h4>", unsafe_allow_html=True)
-            
             if col_q4:
-                st.markdown("<p style='font-size: 14px; color: #64748B;'>Cruza el volumen de cada servicio con su puntaje de Recomendación (Q2).</p>", unsafe_allow_html=True)
-                motivos_data = []
-                for motivo in df_filtrado[col_q4].dropna().unique():
-                    df_motivo = df_filtrado[df_filtrado[col_q4] == motivo]
-                    nps_q2, _, _, _ = calcular_metricas_nps(df_motivo, "Q2 - Recomendación - taller")
-                    motivos_data.append({"Motivo": motivo, "Volumen": len(df_motivo), "NPS_Q2": nps_q2})
-                    
-                if motifs_data := motivos_data:
-                    df_m = pd.DataFrame(motifs_data).sort_values(by="Volumen", ascending=True)
-                    
-                    fig_q4 = go.Figure()
-                    fig_q4.add_trace(go.Bar(y=df_m["Motivo"], x=df_m["Volumen"], orientation='h', marker=dict(color=df_m["NPS_Q2"], colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], cmin=0, cmax=100, colorbar=dict(title="NPS Q2")), text=df_m["Volumen"], textposition='auto', hovertemplate="<b>Motivo:</b> %{y}<br><b>Autos:</b> %{x}<br><b>NPS Recomendación:</b> %{marker.color:.1f}%<extra></extra>"))
-                    fig_q4.update_layout(title="Volumen vs. NPS Recommendation", height=350 if len(df_m) > 3 else 250, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                motivos_data = [{"Motivo": m, "Volumen": len(df_t4_m[df_t4_m[col_q4]==m]), "NPS_Q2": calcular_metricas_nps(df_t4_m[df_t4_m[col_q4]==m], "Q2 - Recomendación - taller")[0]} for m in df_t4_m[col_q4].dropna().unique()]
+                if motivos_data:
+                    df_m_bar = pd.DataFrame(motivos_data).sort_values(by="Volumen", ascending=True)
+                    fig_q4 = go.Figure(go.Bar(y=df_m_bar["Motivo"], x=df_m_bar["Volumen"], orientation='h', marker=dict(color=df_m_bar["NPS_Q2"], colorscale=[[0, '#EF4444'], [0.7, '#EAB308'], [1, '#22C55E']], cmin=0, cmax=100, colorbar=dict(title="NPS Q2")), text=df_m_bar["Volumen"], textposition='auto'))
+                    fig_q4.update_layout(title="Volumen vs. NPS", height=350 if len(df_m_bar)>3 else 250, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_q4, use_container_width=True)
                     
-                    if col_q13 in df_filtrado.columns:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        respuestas_q13 = df_filtrado[col_q13].dropna().unique()
-                        colores_stack = ['#22C55E', '#EF4444', '#EAB308', '#64748B', '#3B82F6']
-                        
+                    if col_q13 in df_t4_m.columns:
                         fig_fir = go.Figure()
-                        y_orden = df_m["Motivo"]
-                        for i, resp in enumerate(respuestas_q13):
-                            conteos = df_filtrado[df_filtrado[col_q13] == resp][col_q4].value_counts()
-                            x_vals = [conteos.get(m, 0) for m in y_orden]
-                            fig_fir.add_trace(go.Bar(y=y_orden, x=x_vals, name=str(resp), orientation='h', marker_color=colores_stack[i % len(colores_stack)]))
-                        
-                        fig_fir.update_layout(barmode='stack', title="Motivo vs. Reparado en 1ra Visita (FIR)", height=350 if len(df_m) > 3 else 250, margin=dict(l=20, r=20, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                        colores_stack = ['#22C55E', '#EF4444', '#EAB308', '#64748B', '#3B82F6']
+                        for i, resp in enumerate(df_t4_m[col_q13].dropna().unique()):
+                            conteos = df_t4_m[df_t4_m[col_q13] == resp][col_q4].value_counts()
+                            fig_fir.add_trace(go.Bar(y=df_m_bar["Motivo"], x=[conteos.get(m, 0) for m in df_m_bar["Motivo"]], name=str(resp), orientation='h', marker_color=colores_stack[i % len(colores_stack)]))
+                        fig_fir.update_layout(barmode='stack', title="Motivo vs. Reparado en 1ra Visita", height=350 if len(df_m_bar)>3 else 250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                         st.plotly_chart(fig_fir, use_container_width=True)
                         
-                if "Q3 - Verbalización" in df_filtrado.columns:
-                    st.markdown("---")
+                if "Q3 - Verbalización" in df_t4_m.columns:
                     st.markdown("#### 💬 Lupa Cualitativa")
-                    motivo_sel = st.selectbox("Filtrar comentarios por Motivo:", options=["Ver Todos"] + sorted(df_filtrado[col_q4].dropna().unique()), key="sel_m")
-                    df_com_q4 = df_filtrado.copy()
-                    if motivo_sel != "Ver Todos": df_com_q4 = df_com_q4[df_com_q4[col_q4] == motivo_sel]
-                    df_mostrar_q4 = df_com_q4[["Fecha de la Encuesta", "Marca", col_q4, "Q1 - Satisfacción general", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
+                    motivo_sel = st.selectbox("Filtrar comentarios:", options=["Ver Todos"] + sorted(df_t4_m[col_q4].dropna().unique()), key="sel_m")
+                    df_mostrar_q4 = df_t4_m[df_t4_m[col_q4] == motivo_sel] if motivo_sel != "Ver Todos" else df_t4_m
+                    df_mostrar_q4 = df_mostrar_q4[["Fecha de la Encuesta", "Marca", col_q4, "Q1 - Satisfacción general", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
                     if len(df_mostrar_q4) > 0: st.dataframe(df_mostrar_q4, use_container_width=True, hide_index=True)
-                    else: st.info("No hay comentarios registrados para el motivo seleccionado.")
-            else:
-                st.info("Columna de motivos de visita (Q4) no encontrada.")
+                    else: st.info("No hay comentarios.")
+            else: st.info("Columna de motivos (Q4) no encontrada.")
 
-    # === LADO DERECHO: INTERNA ===
     with col_carga_i:
         with st.container(border=True):
             st.markdown("<h4 style='text-align:center; color:#10B981;'>🎯 Causa Raíz - Interna</h4>", unsafe_allow_html=True)
-            st.markdown("<p style='font-size: 14px; color: #64748B;'>Análisis basado en las verbalizaciones operativas. Ingresá una palabra clave para buscar fallas recurrentes.</p>", unsafe_allow_html=True)
-            
-            if "CONCATENADO" in df_interna_filtrado.columns:
-                palabra_clave = st.text_input("🔍 Buscar en verbalizaciones (ej. 'lavado', 'ruido', 'demora'):", key="search_int")
+            if "CONCATENADO" in df_t4_i.columns:
+                palabra = st.text_input("🔍 Buscar en verbalizaciones:", key="search_int")
+                df_carga_i = df_t4_i[df_t4_i["CONCATENADO"].str.contains(palabra, case=False, na=False)] if palabra else df_t4_i
                 
-                df_carga_int = df_interna_filtrado.copy()
-                if palabra_clave:
-                    df_carga_int = df_carga_int[df_carga_int["CONCATENADO"].str.contains(palabra_clave, case=False, na=False)]
+                col_n = 'Cliente' if 'Cliente' in df_carga_i.columns else next((c for c in df_carga_i.columns if 'Nombre' in c), None)
+                col_f = 'Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_carga_i.columns else next((c for c in df_carga_i.columns if 'Fecha' in c or 'temporal' in c), None)
                 
-                col_nombre_i = 'Cliente' if 'Cliente' in df_carga_int.columns else next((c for c in df_carga_int.columns if 'Nombre' in c), None)
+                cols_s = [c for c in [col_n, col_f, "1-NPS", "6-Calidad de trabajo"] if c and c in df_carga_i.columns] + ["CONCATENADO"]
+                view_i = df_carga_i[cols_s].dropna(subset=["CONCATENADO"])
                 
-                if 'Fecha de la Encuesta' in df_carga_int.columns:
-                    col_fecha_i = 'Fecha de la Encuesta'
-                elif 'Marca temporal' in df_carga_int.columns:
-                    col_fecha_i = 'Marca temporal'
-                else:
-                    col_fecha_i = next((c for c in df_carga_int.columns if 'Fecha' in c and 'Cierre' not in c), None)
-                
-                cols_i_show = []
-                if col_nombre_i: cols_i_show.append(col_nombre_i)
-                if col_fecha_i: cols_i_show.append(col_fecha_i)
-                if "1-NPS" in df_carga_int.columns: cols_i_show.append("1-NPS")
-                if "6-Calidad de trabajo" in df_carga_int.columns: cols_i_show.append("6-Calidad de trabajo")
-                cols_i_show.append("CONCATENADO")
-                
-                view_int_carga = df_carga_int[cols_i_show].dropna(subset=["CONCATENADO"])
-                
-                st.markdown(f"**Resultados encontrados: {len(view_int_carga)}**")
-                if len(view_int_carga) > 0:
-                    st.dataframe(view_int_carga, use_container_width=True, hide_index=True)
-                else:
-                    st.info("No se encontraron comentarios con esa palabra clave.")
-            else:
-                st.info("Columna 'CONCATENADO' no encontrada en la base interna.")
+                st.markdown(f"**Resultados encontrados: {len(view_i)}**")
+                if len(view_i) > 0: st.dataframe(view_i, use_container_width=True, hide_index=True)
+                else: st.info("No se encontraron comentarios.")
+            else: st.info("Columna 'CONCATENADO' no encontrada.")
 
 # ------------------------------------------------------------------------------
 # 5. GESTIÓN DE QUEJAS
 # ------------------------------------------------------------------------------
 with tab_quejas:
     st.markdown("### Alertas de Clientes Detractores")
-    st.markdown("Casos críticos detectados donde la puntuación en Satisfacción (Q1) o Recomendación (Q2) es igual o menor a 6.")
+    df_t5_m, _, _ = render_filtros_pestaña(df_marca_raw, df_int_raw, "quejas")
     
     with st.container(border=True):
-        if "Q1 - Satisfacción general" in df_filtrado.columns and "Q2 - Recomendación - taller" in df_filtrado.columns:
-            q1_num = pd.to_numeric(df_filtrado["Q1 - Satisfacción general"], errors='coerce')
-            q2_num = pd.to_numeric(df_filtrado["Q2 - Recomendación - taller"], errors='coerce')
-            
-            df_detractores = df_filtrado[(q1_num <= 6) | (q2_num <= 6)]
-            
-            if len(df_detractores) > 0:
-                columnas_queja = ["Fecha de la Encuesta", "Marca", "Q1 - Satisfacción general", "Q2 - Recomendación - taller"]
-                if col_asesor_key:
-                    columnas_queja.append(col_asesor_key)
-                if "Q3 - Verbalización" in df_filtrado.columns:
-                    columnas_queja.append("Q3 - Verbalización")
-                    
-                st.dataframe(df_detractores[columnas_queja], use_container_width=True, hide_index=True)
-            else:
-                st.success("🎉 ¡Excelente! No se registraron clientes detractors para los filtros seleccionados.")
-        else:
-            st.info("Columnas de análisis de quejas no encontradas.")
+        if "Q1 - Satisfacción general" in df_t5_m.columns and "Q2 - Recomendación - taller" in df_t5_m.columns:
+            df_det = df_t5_m[(pd.to_numeric(df_t5_m["Q1 - Satisfacción general"], errors='coerce') <= 6) | (pd.to_numeric(df_t5_m["Q2 - Recomendación - taller"], errors='coerce') <= 6)]
+            if len(df_det) > 0:
+                cols_q = ["Fecha de la Encuesta", "Marca", "Q1 - Satisfacción general", "Q2 - Recomendación - taller"]
+                if col_asesor_key: cols_q.append(col_asesor_key)
+                if "Q3 - Verbalización" in df_t5_m.columns: cols_q.append("Q3 - Verbalización")
+                st.dataframe(df_det[cols_q], use_container_width=True, hide_index=True)
+            else: st.success("🎉 ¡Excelente! No se registraron detractores en este segmento.")
+        else: st.info("Columnas de análisis no encontradas.")
 
 # ------------------------------------------------------------------------------
-# 6. PESTAÑA: TELEMARKETER (CON FILTROS INTERNOS DE AÑO Y MARCA AISLADOS)
+# 6. PESTAÑA: TELEMARKETER (INTACTO CON SUS PROPIOS FILTROS)
 # ------------------------------------------------------------------------------
 with tab_telemarketer:
     st.markdown("### 📞 Control y Efectividad de Canales (Telemarketing)")
-    st.markdown("Esta sección funciona de forma independiente utilizando filtros de tiempo y marca propios.")
-    
     df_tele_base = df_int_raw.copy()
-    col_cierre = "Fecha Cierre"
-    
-    if col_cierre in df_tele_base.columns:
-        df_tele_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_tele_base[col_cierre], dayfirst=True, errors='coerce')
+    if "Fecha Cierre" in df_tele_base.columns:
+        df_tele_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_tele_base["Fecha Cierre"], dayfirst=True, errors='coerce')
         df_tele_base['Año_Cierre'] = df_tele_base['Fecha_Cierre_Clean'].dt.year
         df_tele_base['Mes_Cierre_Num'] = df_tele_base['Fecha_Cierre_Clean'].dt.month
-        
         df_tele_base = df_tele_base.dropna(subset=['Año_Cierre', 'Mes_Cierre_Num'])
         df_tele_base['Año_Cierre'] = df_tele_base['Año_Cierre'].astype(int)
         df_tele_base['Mes_Cierre_Num'] = df_tele_base['Mes_Cierre_Num'].astype(int)
-        df_tele_base['Mes_Cierre_Nombre'] = df_tele_base['Mes_Cierre_Num'].map(MESES_ES)
         
-        # --- DESPLIEGUE DE FILTROS INTERNOS EN PARALELO ---
-        col_f1, col_f2 = st.columns(2)
-        
-        with col_f1:
-            anios_cierre_disponibles = sorted(df_tele_base['Año_Cierre'].unique(), reverse=True)
-            anio_tele_sel = st.selectbox("Seleccione Año de Cierre:", options=anios_cierre_disponibles, key="sb_anio_tele")
-            
-        with col_f2:
-            if 'Marca' in df_tele_base.columns:
-                marcas_tele_disponibles = sorted(df_tele_base['Marca'].dropna().unique())
-            else:
-                marcas_tele_disponibles = ["PEUGEOT", "CITROEN"]
+        with st.expander("⚙️ Filtros Telemarketing", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1:
+                anios_cierre = sorted(df_tele_base['Año_Cierre'].unique(), reverse=True)
+                anio_tele_sel = st.selectbox("Año:", options=anios_cierre, key="sb_anio_tele")
+            with c2:
+                marcas_tele = sorted(df_tele_base['Marca'].dropna().unique()) if 'Marca' in df_tele_base.columns else []
+                marcas_tele_sel = st.multiselect("Marca(s):", options=marcas_tele, default=marcas_tele, key="ms_marca_tele")
                 
-            marcas_tele_sel = st.multiselect("Seleccione Marca(s):", options=marcas_tele_disponibles, default=marcas_tele_disponibles, key="ms_marca_tele")
-            
-        # APLICAR FILTRADO INTERNO EXCLUSIVO (Año + Marcas seleccionadas)
         df_tele_filtrado = df_tele_base[df_tele_base['Año_Cierre'] == anio_tele_sel]
-        if marcas_tele_sel and 'Marca' in df_tele_filtrado.columns:
-            df_tele_filtrado = df_tele_filtrado[df_tele_filtrado['Marca'].isin(marcas_tele_sel)]
-            
+        if marcas_tele_sel and 'Marca' in df_tele_filtrado.columns: df_tele_filtrado = df_tele_filtrado[df_tele_filtrado['Marca'].isin(marcas_tele_sel)]
+        
         st.markdown("---")
         st.markdown(f"#### 📈 Evolución Mensual de Comunicación Efectiva")
-        
-        meses_con_datos = sorted(df_tele_filtrado['Mes_Cierre_Num'].unique())
-        
         line_data_tele = []
         for m_num in range(1, 13):
             df_mes = df_tele_filtrado[df_tele_filtrado['Mes_Cierre_Num'] == m_num]
-            
             if 'Tipo Contacto' in df_mes.columns:
-                s_contacto = df_mes['Tipo Contacto'].fillna('Vacío').astype(str).str.strip()
-                
-                c_whatsapp = len(s_contacto[s_contacto == 'Whatsapp'])
-                c_telefonico = len(s_contacto[s_contacto == 'Telefonico'])
-                c_vacios = len(s_contacto[s_contacto == 'Vacío'])
-                
-                total_intentos_global = c_whatsapp + c_telefonico + c_vacios
-                
-                # 1. EFECTIVIDAD VIRTUAL (WHATSAPP): WhatsApp / (WhatsApp + Vacios)
-                den_virtual = c_whatsapp + c_vacios
-                pct_virtual = round((c_whatsapp / den_virtual * 100), 1) if den_virtual > 0 else None
-                
-                # 2. EFECTIVIDAD TELEMARKETER (TELEFONICO): Telefonico / (Telefonico + Vacios)
-                den_human = c_telefonico + c_vacios
-                pct_human = round((c_telefonico / den_human * 100), 1) if den_human > 0 else None
-                
-                # 3. EFECTIVIDAD GLOBAL DEL TALLER: (Whatsapp + Telefonico) / Total Intentos Globales
-                pct_global = round(((c_whatsapp + c_telefonico) / total_intentos_global * 100), 1) if total_intentos_global > 0 else None
-            else:
-                c_whatsapp, c_telefonico, c_vacios = 0, 0, 0
-                pct_global, pct_virtual, pct_human = None, None, None
-                
-            if m_num in meses_con_datos:
-                line_data_tele.append({
-                    "Mes_Nombre": MESES_ES[m_num],
-                    "Mes_Num": m_num,
-                    "Global": pct_global,
-                    "Virtual": pct_virtual,
-                    "Telemarketer": pct_human,
-                    "Cant_WA": c_whatsapp,
-                    "Cant_Tel": c_telefonico,
-                    "Cant_Vac": c_vacios
-                })
+                s_c = df_mes['Tipo Contacto'].fillna('Vacío').astype(str).str.strip()
+                c_wa, c_tel, c_vac = len(s_c[s_c=='Whatsapp']), len(s_c[s_c=='Telefonico']), len(s_c[s_c=='Vacío'])
+                tot = c_wa + c_tel + c_vac
+                p_virt = round((c_wa/(c_wa+c_vac)*100), 1) if (c_wa+c_vac)>0 else None
+                p_hum = round((c_tel/(c_tel+c_vac)*100), 1) if (c_tel+c_vac)>0 else None
+                p_glob = round(((c_wa+c_tel)/tot*100), 1) if tot>0 else None
+                if m_num in df_tele_filtrado['Mes_Cierre_Num'].unique():
+                    line_data_tele.append({"Mes_Nombre": MESES_ES[m_num], "Mes_Num": m_num, "Global": p_glob, "Virtual": p_virt, "Telemarketer": p_hum, "Cant_WA": c_wa, "Cant_Tel": c_tel, "Cant_Vac": c_vac})
         
         if line_data_tele:
-            df_line_chart = pd.DataFrame(line_data_tele).sort_values("Mes_Num")
-            
+            df_l = pd.DataFrame(line_data_tele).sort_values("Mes_Num")
             fig_tele = go.Figure()
-            
-            custom_hover = "<b>%{x}</b><br>WhatsApp: %{customdata[0]}<br>Telefónico: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"
-            matrix_counts = df_line_chart[['Cant_WA', 'Cant_Tel', 'Cant_Vac']].values
-            
-            # Línea Global: % en vértice
-            fig_tele.add_trace(go.Scatter(
-                x=df_line_chart['Mes_Nombre'], y=df_line_chart['Global'], 
-                mode='lines+markers+text', name='Efectividad Global (Taller)', 
-                line=dict(color='#1E293B', width=4), 
-                text=df_line_chart['Global'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), 
-                textposition='top center',
-                customdata=matrix_counts, hovertemplate=custom_hover
-            ))
-            
-            # Línea Virtual: % en vértice
-            fig_tele.add_trace(go.Scatter(
-                x=df_line_chart['Mes_Nombre'], y=df_line_chart['Virtual'], 
-                mode='lines+markers+text', name='Asesor Virtual (WhatsApp)', 
-                line=dict(color='#2563EB', width=2, dash='dash'),
-                text=df_line_chart['Virtual'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""),
-                textposition='top center',
-                customdata=matrix_counts, hovertemplate=custom_hover
-            ))
-            
-            # Línea Telemarketer: % en vértice (abajo para no encimarse)
-            fig_tele.add_trace(go.Scatter(
-                x=df_line_chart['Mes_Nombre'], y=df_line_chart['Telemarketer'], 
-                mode='lines+markers+text', name='Asesor Telemarketer (Telefónico)', 
-                line=dict(color='#10B981', width=2, dash='dot'),
-                text=df_line_chart['Telemarketer'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""),
-                textposition='bottom center',
-                customdata=matrix_counts, hovertemplate=custom_hover
-            ))
-            
-            # NUEVA LÍNEA: Objetivo de efectividad al 75% (Referencia estática discontinua)
-            fig_tele.add_trace(go.Scatter(
-                x=[df_line_chart['Mes_Nombre'].iloc[0], df_line_chart['Mes_Nombre'].iloc[-1]], 
-                y=[75, 75], 
-                mode='lines', 
-                name='Objetivo (75%)', 
-                line=dict(color='#EF4444', width=2, dash='dash'), 
-                hoverinfo='skip'
-            ))
-            
-            fig_tele.update_layout(
-                yaxis=dict(title='Porcentaje (%)', range=[0, 105], showgrid=True, gridcolor='#E2E8F0'),
-                xaxis=dict(showgrid=False),
-                margin=dict(l=40, r=40, t=20, b=40),
-                height=400,
-                hovermode='x unified',
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
+            m_counts = df_l[['Cant_WA', 'Cant_Tel', 'Cant_Vac']].values
+            c_hov = "<b>%{x}</b><br>WhatsApp: %{customdata[0]}<br>Telefónico: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"
+            fig_tele.add_trace(go.Scatter(x=df_l['Mes_Nombre'], y=df_l['Global'], mode='lines+markers+text', name='Efectividad Global', line=dict(color='#1E293B', width=4), text=df_l['Global'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center', customdata=m_counts, hovertemplate=c_hov))
+            fig_tele.add_trace(go.Scatter(x=df_l['Mes_Nombre'], y=df_l['Virtual'], mode='lines+markers+text', name='Virtual (WhatsApp)', line=dict(color='#2563EB', width=2, dash='dash'), text=df_l['Virtual'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='top center', customdata=m_counts, hovertemplate=c_hov))
+            fig_tele.add_trace(go.Scatter(x=df_l['Mes_Nombre'], y=df_l['Telemarketer'], mode='lines+markers+text', name='Telemarketer (Tel)', line=dict(color='#10B981', width=2, dash='dot'), text=df_l['Telemarketer'].apply(lambda x: f"{x}%" if pd.notnull(x) else ""), textposition='bottom center', customdata=m_counts, hovertemplate=c_hov))
+            fig_tele.add_trace(go.Scatter(x=[df_l['Mes_Nombre'].iloc[0], df_l['Mes_Nombre'].iloc[-1]], y=[75, 75], mode='lines', name='Objetivo (75%)', line=dict(color='#EF4444', width=2, dash='dash'), hoverinfo='skip'))
+            fig_tele.update_layout(yaxis=dict(title='%', range=[0, 105]), height=400, hovermode='x unified', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             st.plotly_chart(fig_tele, use_container_width=True)
-        else:
-            st.info("Sin registros suficientes para generar el gráfico de líneas con los filtros seleccionados.")
             
-        # --- SECCIÓN GRAFICOS DE TORTA MENSUALES ---
-        st.markdown("---")
-        st.markdown(f"#### 🍕 Desglose Mensual del Estado de Contacto ('Contactado')")
-        
-        if 'Contactado' in df_tele_filtrado.columns:
-            df_torta_base = df_tele_filtrado.dropna(subset=['Contactado'])
-            meses_torta = sorted(df_torta_base['Mes_Cierre_Num'].unique())
-            
-            if meses_torta:
-                cols_per_row = 3
-                for i in range(0, len(meses_torta), cols_per_row):
-                    chunk_meses = meses_torta[i:i+cols_per_row]
-                    st_cols = st.columns(len(chunk_meses))
-                    
-                    for idx, m_num in enumerate(chunk_meses):
-                        with st_cols[idx]:
-                            df_mes_torta = df_torta_base[df_torta_base['Mes_Cierre_Num'] == m_num]
-                            counts_estado = df_mes_torta['Contactado'].value_counts()
-                            
-                            fig_pie = go.Figure(data=[go.Pie(
-                                labels=counts_estado.index,
-                                values=counts_estado.values,
-                                hole=.4,
-                                textinfo='percent',
-                                textposition='inside'
-                            )])
-                            
-                            fig_pie.update_layout(
-                                title={'text': f"<b>{MESES_ES[m_num]}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'font': {'size': 14, 'color': '#1E293B'}},
-                                margin=dict(l=10, r=10, t=40, b=10),
-                                height=230,
-                                showlegend=True,
-                                legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)),
-                                paper_bgcolor='rgba(0,0,0,0)',
-                                plot_bgcolor='rgba(0,0,0,0)'
-                            )
-                            st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                st.info("No se registran datos cargados en la columna 'Contactado' para los criterios seleccionados.")
-        else:
-            st.warning("La columna 'Contactado' no fue localizada en la hoja de datos.")
-    else:
-        st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Telemarketer.")
+            st.markdown("---")
+            if 'Contactado' in df_tele_filtrado.columns:
+                df_torta = df_tele_filtrado.dropna(subset=['Contactado'])
+                meses_torta = sorted(df_torta['Mes_Cierre_Num'].unique())
+                for i in range(0, len(meses_torta), 3):
+                    chunk = meses_torta[i:i+3]
+                    cols = st.columns(len(chunk))
+                    for idx, m_n in enumerate(chunk):
+                        counts = df_torta[df_torta['Mes_Cierre_Num']==m_n]['Contactado'].value_counts()
+                        fig_p = go.Figure(data=[go.Pie(labels=counts.index, values=counts.values, hole=.4, textinfo='percent', textposition='inside')])
+                        fig_p.update_layout(title={'text': f"<b>{MESES_ES[m_n]}</b>", 'x': 0.5}, height=230, margin=dict(t=40,b=10,l=10,r=10), legend=dict(orientation="h", y=-0.05, xanchor="center", x=0.5, font=dict(size=10)), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                        with cols[idx]: st.plotly_chart(fig_p, use_container_width=True)
+        else: st.info("Sin registros suficientes para este filtro.")
+    else: st.error("Columna 'Fecha Cierre' no encontrada.")
 
 # ------------------------------------------------------------------------------
-# 7. PESTAÑA: PRIMA DE CALIDAD (TABLERO ANUAL CON AUDITORÍA + DRIVERS DE COBRO)
+# 7. PESTAÑA: PRIMA DE CALIDAD (INTACTO)
 # ------------------------------------------------------------------------------
 with tab_prima:
     st.markdown("### 📊 Tablero de Auditoría y Liquidación: Prima de Calidad Postventa")
-    st.markdown("Esta sección evalúa el cumplimiento de las llaves obligatorias y los incentivos por drivers, incorporando el Bonus Trimestral del 5% y las escalas actualizadas de forma dinámica por año y mes.")
-    
-    # Selector de Año exclusivo interno
-    anios_disponibles_prima = sorted(df_marca_raw['Año'].unique(), reverse=True)
-    if anios_disponibles_prima:
-        anio_prima_sel = st.selectbox("Seleccione Año para Evaluar la Prima:", options=anios_disponibles_prima, key="sb_anio_prima")
+    anios_prima = sorted(df_marca_raw['Año'].unique(), reverse=True)
+    if anios_prima:
+        with st.expander("⚙️ Filtros de Prima", expanded=False):
+            c1, c2 = st.columns(2)
+            with c1: anio_prima_sel = st.selectbox("Año:", options=anios_prima, key="sb_anio_prima")
+            with c2: marcas_prima_sel = st.multiselect("Marcas:", options=sorted(df_marca_raw['Marca'].dropna().unique()) if 'Marca' in df_marca_raw.columns else ["PEUGEOT", "CITROEN"], default=["PEUGEOT", "CITROEN"] if 'Marca' not in df_marca_raw.columns else sorted(df_marca_raw['Marca'].dropna().unique()), key="ms_marcas_prima")
         
-        # Seteo de entorno dinámico global para corregir NameError
         es_filtro_2025 = (anio_prima_sel == 2025)
+        p_peugeot = any('peugeot' in m.lower() for m in marcas_prima_sel) if marcas_prima_sel else True
+        p_citroen = any('citroen' in m.lower() for m in marcas_prima_sel) if marcas_prima_sel else True
+        personas_declaradas = 11 if (p_peugeot and not p_citroen) else (14 if (p_citroen and not p_peugeot) else 25)
         
-        # Filtro de Marcas específico para acotar la auditoría de la prima
-        marcas_prima_disponibles = sorted(df_marca_raw['Marca'].dropna().unique()) if 'Marca' in df_marca_raw.columns else ["PEUGEOT", "CITROEN"]
-        marcas_prima_sel = st.multiselect("Filtrar por Marcas en la Prima:", options=marcas_prima_disponibles, default=marcas_prima_disponibles, key="ms_marcas_prima")
-        
-        # Determinar de forma dinámica las personas según la marca seleccionada
-        es_peugeot_activo = any('peugeot' in m.lower() for m in marcas_prima_sel) if marcas_prima_sel else True
-        es_citroen_activo = any('citroen' in m.lower() for m in marcas_prima_sel) if marcas_prima_sel else True
-        
-        if es_peugeot_activo and not es_citroen_activo:
-            personas_declaradas = 11
-        elif es_citroen_activo and not es_peugeot_activo:
-            personas_declaradas = 14
-        else:
-            personas_declaradas = 25 # Suma consolidada
-            
-        # Procesar datos base filtrados por año
         df_marca_anio = df_marca_raw[df_marca_raw['Año'] == anio_prima_sel]
+        line_data_prima, monto_puro_liquidado, max_teorico_acumulado = [], {}, {}
         
-        # Estructurar la matriz de meses (1 al 12) para armar las columnas
-        meses_columnas = list(range(1, 13))
-        line_data_prima = []
-        
-        # Diccionarios internos para control acumulado de tramos de cara al Bonus del 5%
-        monto_puro_liquidado = {}
-        max_teorico_acumulado = {}
-        
-        # Procesamiento dinámico mes a mes
-        for m_num in meses_columnas:
-            df_mes_marca_base = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
-            
-            # Filtros de marca aplicados a las muestras
-            df_mes_marca_filtro = df_mes_marca_base.copy()
+        for m_num in range(1, 13):
+            df_mes_marca_filtro = df_marca_anio[df_marca_anio['Mes_Num'] == m_num]
             df_anio_marca_filtro = df_marca_anio.copy()
             if marcas_prima_sel:
-                if 'Marca' in df_mes_marca_filtro.columns:
-                    df_mes_marca_filtro = df_mes_marca_filtro[df_mes_marca_filtro['Marca'].isin(marcas_prima_sel)]
-                if 'Marca' in df_anio_marca_filtro.columns:
-                    df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
+                if 'Marca' in df_mes_marca_filtro.columns: df_mes_marca_filtro = df_mes_marca_filtro[df_mes_marca_filtro['Marca'].isin(marcas_prima_sel)]
+                if 'Marca' in df_anio_marca_filtro.columns: df_anio_marca_filtro = df_anio_marca_filtro[df_anio_marca_filtro['Marca'].isin(marcas_prima_sel)]
             
-            # Condicional de corte de escala temporal e históricos
-            es_escala_2025_post_mayo = (anio_prima_sel == 2025 and m_num >= 5)
-            es_escala_2026_post_abril = (anio_prima_sel == 2026 and m_num >= 4)
+            es_2025_post = (anio_prima_sel == 2025 and m_num >= 5)
+            es_2026_post = (anio_prima_sel == 2026 and m_num >= 4)
+            m_l1, m_l2, m_l5 = (80.5 if es_2025_post else 77.0), (88.0 if es_2025_post else 86.3), (8 if es_2025_post else 10)
             
-            meta_llave1_umbral = 80.5 if es_escala_2025_post_mayo else 77.0
-            meta_llave2_umbral = 88.0 if es_escala_2025_post_mayo else 86.3
-            meta_llave5_umbral = 8 if es_escala_2025_post_mayo else 10
-            
-            if len(df_mes_marca_base) == 0:
+            if len(df_mes_marca_filtro) == 0:
                 monto_puro_liquidado[m_num] = 0
-                max_t_unit = 630000 if es_escala_2026_post_abril else (420000 if es_escala_2025_post_mayo else 540000)
-                max_teorico_acumulado[m_num] = max_t_unit * personas_declaradas
-                
-                line_data_prima.append({
-                    "Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False,
-                    "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False,
-                    "V_D1": 0, "V_D2": 0, "V_D3": 0, "V_D4": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0,
-                    "Es_2025": es_escala_2025_post_mayo, "Labels": ["🔹 Driver 1", "🔹 Driver 2", "🔹 Driver 3", "🔹 Driver 4"]
-                })
+                max_teorico_acumulado[m_num] = (630000 if es_2026_post else (420000 if es_2025_post else 540000)) * personas_declaradas
+                line_data_prima.append({"Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False, "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False, "V_D1": 0, "V_D2": 0, "V_D3": 0, "V_D4": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0, "Es_2025": es_2025_post, "Labels": ["🔹 Driver 1", "🔹 Driver 2", "🔹 Driver 3", "🔹 Driver 4"]})
                 continue
                 
-            # --- LLAVE 1: CONTACTO POSTERIOR 6MM ---
-            df_6mm_marca = df_anio_marca_filtro[(df_anio_marca_filtro['Mes_Num'] > (m_num - 6)) & (df_anio_marca_filtro['Mes_Num'] <= m_num)]
-            tasa_6mm = 0.0
-            ok_llave1 = False
-            val_l1_display = "-"
+            df_6mm = df_anio_marca_filtro[(df_anio_marca_filtro['Mes_Num'] > (m_num - 6)) & (df_anio_marca_filtro['Mes_Num'] <= m_num)]
+            tasa_6mm, ok_llave1, val_l1_display = 0.0, False, "-"
+            if "Q18 - Contactado" in df_6mm.columns:
+                s_q18 = df_6mm["Q18 - Contactado"].astype(str).str.strip().str.lower()
+                c_si, c_no = len(s_q18[s_q18.isin(['sí', 'si'])]), len(s_q18[s_q18=='no'])
+                if (c_si + c_no) > 0:
+                    tasa_6mm = round((c_si / (c_si + c_no)) * 100, 1)
+                    ok_llave1, val_l1_display = (tasa_6mm >= m_l1), f"{tasa_6mm}%"
             
-            if "Q18 - Contactado" in df_6mm_marca.columns:
-                serie_q18 = df_6mm_marca["Q18 - Contactado"].astype(str).str.strip()
-                cant_si = len(serie_q18[serie_q18.str.lower() == 'sí']) + len(serie_q18[serie_q18.str.lower() == 'si'])
-                cant_no = len(serie_q18[serie_q18.str.lower() == 'no'])
-                total_validos_6mm = cant_si + cant_no
-                if total_validos_6mm > 0:
-                    tasa_6mm = round((cant_si / total_validos_6mm) * 100, 1)
-                    ok_llave1 = (tasa_6mm >= meta_llave1_umbral)
-                    val_l1_display = f"{tasa_6mm}%"
+            score_nps_mes = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")[0]
+            ok_llave2 = (score_nps_mes >= m_l2)
             
-            # --- LLAVE 2: NPS MÍNIMO GLOBAL ---
-            score_nps_mes, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")
-            ok_llave2 = (score_nps_mes >= meta_llave2_umbral)
-            
-            # --- LLAVE 3: TASA DE MAIL VÁLIDO ---
-            pct_mail_val = 0.0
-            ok_llave3 = False
-            val_l3_display = "-"
-            string_mes_buscar = f"{MESES_SHORT[m_num]} {anio_prima_sel}"
-            
+            pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                col_tasa_mail = next((c for c in df_email_llave_raw.columns if 'Tasa de Email Utilizable' in c), None)
-                col_mes_ext = next((c for c in df_email_llave_raw.columns if c.lower() == 'mes'), None)
-                col_marca_ext = next((c for c in df_email_llave_raw.columns if c.lower() == 'marca'), None)
-                
-                if col_tasa_mail and col_mes_ext:
-                    df_row_mail = df_email_llave_raw[df_email_llave_raw[col_mes_ext].astype(str).str.strip().str.lower() == string_mes_buscar.lower()]
-                    if marcas_prima_sel and col_marca_ext:
-                        marcas_en_hoja = [m.lower() for m in marcas_prima_sel]
-                        df_row_mail = df_row_mail[df_row_mail[col_marca_ext].astype(str).str.strip().str.lower().isin(marcas_en_hoja)]
-                        
-                    if not df_row_mail.empty:
-                        tasas_lista = []
-                        for _, row_m in df_row_mail.iterrows():
-                            val_raw = row_m[col_tasa_mail]
-                            if isinstance(val_raw, str):
-                                val_raw = val_raw.replace('%', '').replace(',', '.').strip()
-                            num_parsed = pd.to_numeric(val_raw, errors='coerce')
-                            if pd.notnull(num_parsed):
-                                val_final = num_parsed if num_parsed > 1.0 else num_parsed * 100
-                                tasas_lista.append(val_final)
-                        if tasas_lista:
-                            pct_mail_val = round(sum(tasas_lista) / len(tasas_lista), 1)
-                            ok_llave3 = (pct_mail_val >= 80.0)
-                            val_l3_display = f"{pct_mail_val}%"
+                col_t = next((c for c in df_email_llave_raw.columns if 'Email Utilizable' in c), None)
+                col_m = next((c for c in df_email_llave_raw.columns if c.lower()=='mes'), None)
+                col_mar = next((c for c in df_email_llave_raw.columns if c.lower()=='marca'), None)
+                if col_t and col_m:
+                    str_m = f"{MESES_SHORT[m_num]} {anio_prima_sel}".lower()
+                    df_rm = df_email_llave_raw[df_email_llave_raw[col_m].astype(str).str.strip().str.lower() == str_m]
+                    if marcas_prima_sel and col_mar: df_rm = df_rm[df_rm[col_mar].astype(str).str.strip().str.lower().isin([m.lower() for m in marcas_prima_sel])]
+                    if not df_rm.empty:
+                        tasas = [float(str(v).replace('%','').replace(',','.')) for v in df_rm[col_t] if pd.notnull(pd.to_numeric(str(v).replace('%','').replace(',','.'), errors='coerce'))]
+                        if tasas:
+                            pct_mail_val = round(sum([t if t>1 else t*100 for t in tasas]) / len(tasas), 1)
+                            ok_llave3, val_l3_display = (pct_mail_val >= 80.0), f"{pct_mail_val}%"
+                            
+            ok_llave5 = (len(df_mes_marca_filtro) >= m_l5)
+            llaves_ok = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
             
-            # --- LLAVE 5: MUESTRA MÍNIMA ---
-            total_encuestas_mes = len(df_mes_marca_filtro)
-            ok_llave5 = (total_encuestas_mes >= meta_llave5_umbral)
-            
-            llaves_aprobadas_mes = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
-            
-            # --- CÁLCULO INDEPENDIENTE DE DRIVERS CON ESCALAS DISCRIMINADAS POR MES ---
-            monto_d1 = 0
-            monto_d2 = 0
-            monto_d3 = 0
-            monto_d4 = 0
-            
-            if es_escala_2025_post_mayo:
-                if score_nps_mes >= 93.5: monto_d1 = 210000
-                elif score_nps_mes >= 89.8: monto_d1 = 160000
-                score_q11, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")
-                if score_q11 >= 94.0: monto_d2 = 105000
-                elif score_q11 >= 89.3: monto_d2 = 80000
-                score_q8, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q8 - Competencia Asesor de Servicio")
-                if score_q8 >= 95.5: monto_d3 = 52500
-                elif score_q8 >= 93.3: monto_d3 = 40000
-                score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
-                if score_q7 >= 95.5: monto_d4 = 52500
-                elif score_q7 >= 93.3: monto_d4 = 40000
-                max_teorico_unitario = 420000
-                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab. y Costo", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía y Amab. Asesor"]
+            m1, m2, m3, m4 = 0, 0, 0, 0
+            if es_2025_post:
+                if score_nps_mes>=93.5: m1=210000
+                elif score_nps_mes>=89.8: m1=160000
+                sq11 = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")[0]
+                if sq11>=94.0: m2=105000
+                elif sq11>=89.3: m2=80000
+                sq8 = calcular_metricas_nps(df_mes_marca_filtro, "Q8 - Competencia Asesor de Servicio")[0]
+                if sq8>=95.5: m3=52500
+                elif sq8>=93.3: m3=40000
+                sq7 = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")[0]
+                if sq7>=95.5: m4=52500
+                elif sq7>=93.3: m4=40000
+                max_u, lbls = 420000, ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab.", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía Asesor"]
             else:
-                if not es_escala_2026_post_abril:
-                    if score_nps_mes >= 93.5: monto_d1 = 270000
-                    elif score_nps_mes >= 88.3: monto_d1 = 200000
-                    score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
-                    if score_q12 >= 94.0: monto_d2 = 150000
-                    elif score_q12 >= 87.8: monto_d2 = 120000
-                    score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
-                    if score_q7 >= 95.5: monto_d3 = 60000
-                    elif score_q7 >= 91.8: monto_d3 = 40000
-                    score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
-                    if score_q19 >= 95.5: monto_d4 = 60000
-                    elif score_q19 >= 91.8: monto_d4 = 40000
-                    max_teorico_unitario = 540000
+                if not es_2026_post:
+                    if score_nps_mes>=93.5: m1=270000
+                    elif score_nps_mes>=88.3: m1=200000
+                    sq12 = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")[0]
+                    if sq12>=94.0: m2=150000
+                    elif sq12>=87.8: m2=120000
+                    sq7 = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")[0]
+                    if sq7>=95.5: m3=60000
+                    elif sq7>=91.8: m3=40000
+                    sq19 = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")[0]
+                    if sq19>=95.5: m4=60000
+                    elif sq19>=91.8: m4=40000
+                    max_u, lbls = 540000, ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad Trabajo", "🔹 Q7 Cortesía Asesor", "🔹 Q19 Satisfacción Contacto"]
                 else:
-                    if score_nps_mes >= 93.5: monto_d1 = 310000
-                    elif score_nps_mes >= 88.3: monto_d1 = 230000
-                    score_q12, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")
-                    if score_q12 >= 94.0: monto_d2 = 160000
-                    elif score_q12 >= 87.8: monto_d2 = 140000
-                    score_q7, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")
-                    if score_q7 >= 95.5: monto_d3 = 80000
-                    elif score_q7 >= 91.8: monto_d3 = 50000
-                    score_q19, _, _, _ = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")
-                    if score_q19 >= 95.5: monto_d4 = 80000
-                    elif score_q19 >= 91.8: monto_d4 = 50000
-                    max_teorico_unitario = 630000
-                labels_drivers = ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad de Trabajo", "🔹 Q7 Cortesía y Amabilidad", "🔹 Q19 Satisfacción de Contacto"]
-                
-            suma_drivers_mes = (monto_d1 + monto_d2 + monto_d3 + monto_d4) if llaves_aprobadas_mes else 0
-            total_liq_sector_mes = suma_drivers_mes * personas_declaradas
+                    if score_nps_mes>=93.5: m1=310000
+                    elif score_nps_mes>=88.3: m1=230000
+                    sq12 = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")[0]
+                    if sq12>=94.0: m2=160000
+                    elif sq12>=87.8: m2=140000
+                    sq7 = calcular_metricas_nps(df_mes_marca_filtro, "Q7 - Cortesía y Amabilidad")[0]
+                    if sq7>=95.5: m3=80000
+                    elif sq7>=91.8: m3=50000
+                    sq19 = calcular_metricas_nps(df_mes_marca_filtro, "Q19 - Satisfacción con el Contacto")[0]
+                    if sq19>=95.5: m4=80000
+                    elif sq19>=91.8: m4=50000
+                    max_u, lbls = 630000, ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad Trabajo", "🔹 Q7 Cortesía Asesor", "🔹 Q19 Satisfacción Contacto"]
             
-            monto_puro_liquidado[m_num] = total_liq_sector_mes
-            max_teorico_acumulado[m_num] = max_teorico_unitario * personas_declaradas
-            
-            line_data_prima.append({
-                "Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num],
-                "L1_Val": val_l1_display, "L1_OK": ok_llave1,
-                "L2_Val": f"{score_nps_mes}%", "L2_OK": ok_llave2,
-                "L3_Val": val_l3_display, "L3_OK": ok_llave3,
-                "Es_2025": es_escala_2025_post_mayo,
-                "L5_Val": str(total_encuestas_mes), "L5_OK": ok_llave5,
-                "V_D1": monto_d1, "V_D2": monto_d2, "V_D3": monto_d3, "V_D4": monto_d4,
-                "Suma_D_M": suma_drivers_mes, "Pers": personas_declaradas, "Liq_S_M": total_liq_sector_mes,
-                "Labels": labels_drivers
-            })
+            sum_d = (m1+m2+m3+m4) if llaves_ok else 0
+            tot_l = sum_d * personas_declaradas
+            monto_puro_liquidado[m_num] = tot_l
+            max_teorico_acumulado[m_num] = max_u * personas_declaradas
+            line_data_prima.append({"Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": val_l1_display, "L1_OK": ok_llave1, "L2_Val": f"{score_nps_mes}%", "L2_OK": ok_llave2, "L3_Val": val_l3_display, "L3_OK": ok_llave3, "Es_2025": es_2025_post, "L5_Val": str(len(df_mes_marca_filtro)), "L5_OK": ok_llave5, "V_D1": m1, "V_D2": m2, "V_D3": m3, "V_D4": m4, "Suma_D_M": sum_d, "Pers": personas_declaradas, "Liq_S_M": tot_l, "Labels": lbls})
 
-        # --- CONSOLIDACIÓN FINAL E INYECCIÓN DE ALERTAS PREDICTIVAS ---
-        lista_render_completa = []
+        lista_render = []
         for d in line_data_prima:
             m = d["Mes_Num"]
-            monto_bonus_trimestral = 0
-            str_bonus_display = "-"
-            color_bonus_html = "color:#64748B;"
-            aplica_fila_bonus = (m in [3, 6, 9, 12])
+            m_bonus, s_bonus, c_bonus = 0, "-", "color:#64748B;"
             
-            indices_trimestre = [m - (m-1)%3 + i for i in range(3)]
-            meses_acumulados_hasta_ahora = [idx for idx in indices_trimestre if idx <= m]
-            
-            df_trim_encuestas = df_marca_anio[df_marca_anio['Mes_Num'].isin(meses_acumulados_hasta_ahora)]
-            if marcas_prima_sel and 'Marca' in df_trim_encuestas.columns:
-                df_trim_encuestas = df_trim_encuestas[df_trim_encuestas['Marca'].isin(marcas_prima_sel)]
-                
-            if len(df_trim_encuestas) > 0:
-                nps_trim_q2, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q2 - Recomendación - taller")
-                
-                if d["Es_2025"]:
-                    nps_trim_q11, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q11 - Explicación trabajo - costo")
-                    nps_trim_q8, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q8 - Competencia Asesor de Servicio")
-                    nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
-                    cumple_acum_parcial = (nps_trim_q2 >= 89.8 and nps_trim_q11 >= 89.3 and nps_trim_q8 >= 93.3 and nps_trim_q7 >= 93.3)
-                    indicador_falla = "Q2" if nps_trim_q2 < 89.8 else ("Q11" if nps_trim_q11 < 89.3 else ("Q8" if nps_trim_q8 < 93.3 else "Q7"))
-                else:
-                    nps_trim_q12, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q12 - Calidad del trabajo")
-                    nps_trim_q7, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q7 - Cortesía y Amabilidad")
-                    nps_trim_q19, _, _, _ = calcular_metricas_nps(df_trim_encuestas, "Q19 - Satisfacción con el Contacto")
-                    cumple_acum_parcial = (nps_trim_q2 >= 88.3 and nps_trim_q12 >= 87.8 and nps_trim_q7 >= 91.8 and nps_trim_q19 >= 91.8)
-                    indicador_falla = "Q2" if nps_trim_q2 < 88.3 else ("Q12" if nps_trim_q12 < 87.8 else ("Q7" if nps_trim_q7 < 91.8 else "Q19"))
-                
-                if cumple_acum_parcial:
-                    if aplica_fila_bonus:
-                        suma_primas_puras_trim = sum(monto_puro_liquidado.get(idx, 0) for idx in indices_trimestre)
-                        monto_bonus_trimestral = round(suma_primas_puras_trim * 0.05, 0)
-                        str_bonus_display = f"${monto_bonus_trimestral:,.0f}".replace(",", ".")
-                        color_bonus_html = "background-color: #D4EDDA; color: #155724; font-weight: bold;"
+            if m in [3, 6, 9, 12]:
+                idx_trim = [m-2, m-1, m]
+                df_trim = df_marca_anio[df_marca_anio['Mes_Num'].isin(idx_trim)]
+                if marcas_prima_sel and 'Marca' in df_trim.columns: df_trim = df_trim[df_trim['Marca'].isin(marcas_prima_sel)]
+                if len(df_trim) > 0:
+                    nq2 = calcular_metricas_nps(df_trim, "Q2 - Recomendación - taller")[0]
+                    if d["Es_2025"]:
+                        nq11, nq8, nq7 = calcular_metricas_nps(df_trim, "Q11 - Explicación trabajo - costo")[0], calcular_metricas_nps(df_trim, "Q8 - Competencia Asesor de Servicio")[0], calcular_metricas_nps(df_trim, "Q7 - Cortesía y Amabilidad")[0]
+                        ok_trim = (nq2>=89.8 and nq11>=89.3 and nq8>=93.3 and nq7>=93.3)
                     else:
-                        str_bonus_display = "🟢 En Camino"
-                        color_bonus_html = "background-color: #E6FFFA; color: #047857; font-size: 11px; font-weight: bold;"
-                else:
-                    if aplica_fila_bonus:
-                        str_bonus_display = "$0"
-                        color_bonus_html = "background-color: #F8D7DA; color: #721C24; font-weight: bold;"
-                    else:
-                        str_bonus_display = f"🔴 Riesgo ({indicador_falla})"
-                        color_bonus_html = "background-color: #FFF5F5; color: #E53E3E; font-size: 11px; font-weight: bold;"
+                        nq12, nq7, nq19 = calcular_metricas_nps(df_trim, "Q12 - Calidad del trabajo")[0], calcular_metricas_nps(df_trim, "Q7 - Cortesía y Amabilidad")[0], calcular_metricas_nps(df_trim, "Q19 - Satisfacción con el Contacto")[0]
+                        ok_trim = (nq2>=88.3 and nq12>=87.8 and nq7>=91.8 and nq19>=91.8)
+                    
+                    if ok_trim:
+                        m_bonus = round(sum(monto_puro_liquidado.get(i, 0) for i in idx_trim) * 0.05, 0)
+                        s_bonus, c_bonus = f"${m_bonus:,.0f}".replace(",", "."), "background-color: #D4EDDA; color: #155724; font-weight: bold;"
+                    else: s_bonus, c_bonus = "$0", "background-color: #F8D7DA; color: #721C24; font-weight: bold;"
+                    
+            f_calc = d["Liq_S_M"] + m_bonus
+            lista_render.append({**d, "Bonus_Display": s_bonus, "Color_B_Style": c_bonus, "Pct_Cumpl": round((d["Liq_S_M"]/max_teorico_acumulado[m]*100),1) if max_teorico_acumulado[m]>0 else 0.0, "Final_M": f_calc, "Perdida_M": max(0, max_teorico_acumulado[m]-f_calc)})
 
-            final_recalculado_mes = d["Liq_S_M"] + monto_bonus_trimestral
-            perdida_mes_calc = max(0, max_teorico_acumulado[m] - final_recalculado_mes)
-            pct_cumplimiento = round((d["Liq_S_M"] / max_teorico_acumulado[m] * 100), 1) if max_teorico_acumulado[m] > 0 else 0.0
+        if lista_render:
+            html = "<table style='width:100%; border-collapse: collapse; text-align: center; font-size: 13px;'><thead><tr style='background-color: #1E293B; color: white;'><th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>Mes</th>"
+            for d in lista_render: html += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
+            html += "</tr></thead><tbody>"
             
-            lista_render_completa.append({
-                **d, "Bonus_Display": str_bonus_display, "Color_B_Style": color_bonus_html, 
-                "Pct_Cumpl": pct_cumplimiento, "Final_M": final_recalculado_mes, "Perdida_M": perdida_mes_calc
-            })
-
-        # Renderizado de la tabla principal HTML
-        if lista_render_completa:
-            html_tabla = """
-            <table style='width:100%; border-collapse: collapse; font-family: Arial, sans-serif; text-align: center; font-size: 13px;'>
-                <thead>
-                    <tr style='background-color: #1E293B; color: white;'>
-                        <th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-size: 14px;'>Estructura de Control y Prima Anual</th>
-            """
-            for d in lista_render_completa:
-                html_tabla += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
-            html_tabla += "</tr></thead><tbody>"
-            
-            html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🔑 UMBRALES Y LLAVES MAESTRAS (POSTVENTA)</td></tr>"
-            
+            html += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🔑 UMBRALES (POSTVENTA)</td></tr>"
             lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L1_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L1_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L1_Val']}</td>"
-            html_tabla += "</tr>"
+            html += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L1_OK'] else ('#F1F5F9' if d['L1_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L1_Val']}</td>"
+            html += "</tr>"
             
             lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L2_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L2_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L2_Val']}</td>"
-            html_tabla += "</tr>"
+            html += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L2_OK'] else ('#F1F5F9' if d['L2_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L2_Val']}</td>"
+            html += "</tr>"
             
-            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa de Mail Válido (Meta &ge; 80%)</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L3_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L3_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L3_Val']}</td>"
-            html_tabla += "</tr>"
+            html += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa Mail Válido (&ge; 80%)</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L3_OK'] else ('#F1F5F9' if d['L3_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L3_Val']}</td>"
+            html += "</tr>"
+            
+            lbl_l5 = "📊 Muestra Mínima (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima (Meta &ge; 10 Rps.)"
+            html += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L5_OK'] else ('#F1F5F9' if d['L5_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L5_Val']}</td>"
+            html += "</tr>"
+            
+            html += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🎯 INCENTIVOS COMERCIALES</td></tr>"
+            for i in range(4):
+                html += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render[0]['Labels'][i]}</td>"
+                for d in lista_render:
+                    val = d["V_D1"] if i==0 else (d["V_D2"] if i==1 else (d["V_D3"] if i==2 else d["V_D4"]))
+                    html += f"<td style='padding:10px; border:1px solid #E2E8F0;'>${val:,.0f}</td>".replace("$0", "$0")
+                html += "</tr>"
                 
-            lbl_l5 = "📊 Muestra Mínima Mensual (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima Mensual (Meta &ge; 10 Rps.)"
-            html_tabla += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
-            for d in lista_render_completa:
-                bg = "#D4EDDA; color: #155724;" if d["L5_OK"] else "#F8D7DA; color: #721C24;"
-                if d["L5_Val"] == "-": bg = "#F1F5F9; color: #64748B;"
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {bg} font-weight: bold;'>{d['L5_Val']}</td>"
-            html_tabla += "</tr>"
+            html += "<tr style='background-color: #F8FAFC;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>💰 SUMA DRIVERS (Unitario)</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
+            html += "</tr>"
             
-            html_tabla += "<tr style='background-color: #EDF2F7;'><td colspan='" + str(len(lista_render_completa)+1) + "' style='text-align:left; padding:8px; font-weight:bold; color:#2D3748;'>🎯 INCENTIVOS POR DRIVERS COMERCIALES (VALOR INDIVIDUAL)</td></tr>"
+            html += "<tr style='background-color: #F1F5F9; font-weight: bold;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>📊 Eficiencia del Mes</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{'#10B981' if d['Pct_Cumpl']>=90 else ('#F59E0B' if d['Pct_Cumpl']>=50 else '#EF4444')};'>{d['Pct_Cumpl']:.1f}%</td>"
+            html += "</tr>"
             
-            for row_idx in range(4):
-                html_tabla += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render_completa[0]['Labels'][row_idx]}</td>"
-                for d in lista_render_completa:
-                    m_val = d["V_D1"] if row_idx==0 else (d["V_D2"] if row_idx==1 else (d["V_D3"] if row_idx==2 else d["V_D4"]))
-                    html_tabla += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#475569;'>${m_val:,.0f}</td>".replace("$0", "$0")
-                html_tabla += "</tr>"
+            html += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>👥 Personal Declarado</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Pers']}</td>"
+            html += "</tr>"
             
-            html_tabla += "<tr style='background-color: #F8FAFC; border-top: 2px solid #CBD5E1;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#0F172A;'>💰 SUMA DRIVERS (Valor Unitario)</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
-            html_tabla += "</tr>"
+            html += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>📈 Liq. Total Sector</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+            html += "</tr>"
             
-            html_tabla += "<tr style='background-color: #F1F5F9; font-weight: bold;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; color:#475569;'>📊 Eficiencia Comercial del Mes</td>"
-            for d in lista_render_completa:
-                color_pct = "#10B981" if d["Pct_Cumpl"] >= 90 else ("#F59E0B" if d["Pct_Cumpl"] >= 50 else "#EF4444")
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{color_pct};'>{d['Pct_Cumpl']:.1f}%</td>"
-            html_tabla += "</tr>"
+            html += "<tr style='background-color: #FDF2F8;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color: #9D174D;'>⭐ Bonus Trimestral (5%)</td>"
+            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
+            html += "</tr>"
             
-            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>👥 Personal Declarado</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569;'>{d['Pers']}</td>"
-            html_tabla += "</tr>"
+            html += "<tr style='background-color: #D1FAE5;'><td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46;'>💵 LIQUIDACIÓN FINAL</td>"
+            for d in lista_render: html += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
+            html += "</tr></tbody></table>"
             
-            html_tabla += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#475569;'>📈 Liquidación Total Sector</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:#475569; font-weight: 500;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
-            html_tabla += "</tr>"
+            st.markdown(html, unsafe_allow_html=True)
             
-            html_tabla += "<tr style='background-color: #FDF2F8; color: #9D174D;'>"
-            html_tabla += "<td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>⭐ Bonus Trimestral (5%) [Predictivo]</td>"
-            for d in lista_render_completa:
-                html_tabla += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
-            html_tabla += "</tr>"
-            
-            html_tabla += "<tr style='background-color: #D1FAE5; border-top: 2px solid #10B981;'>"
-            html_tabla += "<td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; font-size: 14px;'>💵 LIQUIDACIÓN FINAL CON BONUS</td>"
-            for d in lista_render_completa: html_tabla += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857; font-size: 14px;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
-            html_tabla += "</tr>"
-            
-            html_tabla += "</tbody></table>"
-            st.markdown(html_tabla, unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
-            # ==============================================================================
-            # FILTROS Y TARJETAS KPI DE FLUJO DE CAJA INDEPENDIENTES
-            # ==============================================================================
             st.markdown("---")
-            st.markdown("#### 💵 Control de Flujo de Caja y Auditoría de Pagos Recibidos")
-            st.markdown("<p style='font-size: 13px; color: #64748B; margin-top:-10px;'>Considerando el desfasaje de las transferencias de la marca, utiliza estos selectores para auditar los cobros reales.</p>", unsafe_allow_html=True)
+            st.markdown("#### 💵 Control de Flujo de Caja")
+            c_sel1, c_sel2 = st.columns(2)
+            mes_default = MESES_ES.get((datetime.date.today() - datetime.timedelta(days=45)).month, "Enero")
+            with c_sel1: a_caja = st.selectbox("Año:", options=anios_prima, key="sb_anio_caja")
+            with c_sel2: m_caja = st.multiselect("Meses cobrados:", options=list(MESES_ES.values()), default=[mes_default] if mes_default in [x['Mes_Nombre'] for x in lista_render if x['L1_Val']!='-'] else [], key="ms_meses_caja")
             
-            fecha_actual = datetime.date.today()
-            fecha_cobro = fecha_actual - datetime.timedelta(days=45)
-            mes_default_nombre = MESES_ES.get(fecha_cobro.month, "Enero")
+            m_cob, m_pend, m_perd = 0.0, 0.0, 0.0
+            x_m, y_alc, y_max, y_per = [], [], [], []
+            for d in lista_render:
+                if d["L1_Val"] != "-":
+                    if d["Mes_Nombre"] in m_caja: m_cob += d["Final_M"]; m_perd += d["Perdida_M"]
+                    else: m_pend += d["Final_M"]
+                    x_m.append(d["Mes_Nombre"]); y_alc.append(d["Final_M"]); y_max.append(max_teorico_acumulado.get(d["Mes_Num"], 0)); y_per.append(d["Perdida_M"])
             
-            meses_nombres_presentes = [d["Mes_Nombre"] for d in lista_render_completa if d["L1_Val"] != "-"]
-            opciones_meses = list(MESES_ES.values())
-            default_val = [mes_default_nombre] if mes_default_nombre in meses_nombres_presentes else []
+            pct_alc = (m_cob / (m_cob + m_perd) * 100) if (m_cob + m_perd) > 0 else 0.0
             
-            col_sel_c1, col_sel_c2 = st.columns(2)
-            with col_sel_c1:
-                anio_caja_sel = st.selectbox("Año de Gestión (Flujo Caja):", options=anios_disponibles_prima, key="sb_anio_caja")
-            with col_sel_c2:
-                meses_caja_sel = st.multiselect("Meses cobrados:", options=opciones_meses, default=default_val, key="ms_meses_caja")
+            c_k1, c_k2, c_k3, c_k4 = st.columns(4)
+            c_k1.markdown(f"<div class='kpi-card' style='border-left: 5px solid #10B981;'><div class='kpi-label'>💰 COBRADO</div><div class='kpi-value' style='color:#065F46; font-size: 26px;'>${m_cob:,.0f}</div></div>".replace(",", "."), unsafe_allow_html=True)
+            c_k2.markdown(f"<div class='kpi-card' style='border-left: 5px solid #EF4444;'><div class='kpi-label'>📉 PERDIDO</div><div class='kpi-value' style='color:#B91C1C; font-size: 26px;'>${m_perd:,.0f}</div></div>".replace(",", "."), unsafe_allow_html=True)
+            c_k3.markdown(f"<div class='kpi-card' style='border-left: 5px solid #8B5CF6;'><div class='kpi-label'>📊 % ALCANZADO</div><div class='kpi-value' style='color:#5B21B6; font-size: 26px;'>{pct_alc:.1f}%</div></div>", unsafe_allow_html=True)
+            c_k4.markdown(f"<div class='kpi-card' style='border-left: 5px solid #3B82F6;'><div class='kpi-label'>⏳ PENDIENTE</div><div class='kpi-value' style='color:#1D4ED8; font-size: 26px;'>${m_pend:,.0f}</div></div>".replace(",", "."), unsafe_allow_html=True)
             
-            monto_cobrado_efectivo = 0.0
-            monto_pendiente_prevision = 0.0
-            monto_perdido_acumulado = 0.0
-            
-            montos_grafico_alcanzado = []
-            montos_grafico_maximo = []
-            montos_grafico_perdida = []
-            meses_grafico_nombres = []
-            
-            for d in lista_render_completa:
-                if d["L1_Val"] != "-": 
-                    final_mes = d["Final_M"]
-                    max_teorico = max_teorico_acumulado.get(d["Mes_Num"], 0)
-                    perdida_mes_calc = d["Perdida_M"]
-                    
-                    if d["Mes_Nombre"] in meses_caja_sel:
-                        monto_cobrado_efectivo += final_mes
-                        monto_perdido_acumulado += perdida_mes_calc
-                    else:
-                        monto_pendiente_prevision += final_mes
-                        
-                    montos_grafico_alcanzado.append(final_mes)
-                    montos_grafico_maximo.append(max_teorico)
-                    montos_grafico_perdida.append(perdida_mes_calc)
-                    meses_grafico_nombres.append(d["Mes_Nombre"])
-            
-            monto_maximo_seleccionados = monto_cobrado_efectivo + monto_perdido_acumulado
-            pct_alcanzado_cobrados = (monto_cobrado_efectivo / monto_maximo_seleccionados * 100) if monto_maximo_seleccionados > 0 else 0.0
-            
-            str_cobrado = f"${monto_cobrado_efectivo:,.0f}".replace(",", ".")
-            str_perdido = f"${monto_perdido_acumulado:,.0f}".replace(",", ".")
-            str_pct_alcanzado = f"{pct_alcanzado_cobrados:.1f}%"
-            str_pendiente = f"${monto_pendiente_prevision:,.0f}".replace(",", ".")
-            
-            col_c_1, col_c_2, col_c_3, col_c_4 = st.columns(4)
-            
-            with col_c_1:
-                st.markdown(f"""
-                    <div class='kpi-card' style='border-left: 5px solid #10B981; padding: 15px;'>
-                        <div class='kpi-label'>💰 MONTO COBRADO</div>
-                        <div class='kpi-value' style='color:#065F46; font-size: 26px;'>{str_cobrado}</div>
-                        <div class='kpi-sub' style='color:#10B981; font-size: 11px;'>✓ En meses seleccionados</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-            with col_c_2:
-                st.markdown(f"""
-                    <div class='kpi-card' style='border-left: 5px solid #EF4444; padding: 15px;'>
-                        <div class='kpi-label'>📉 MONTO PERDIDO (NO ALCANZADO)</div>
-                        <div class='kpi-value' style='color:#B91C1C; font-size: 26px;'>{str_perdido}</div>
-                        <div class='kpi-sub' style='color:#EF4444; font-size: 11px;'>⚠ No alcanzado en cobrados</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-            with col_c_3:
-                st.markdown(f"""
-                    <div class='kpi-card' style='border-left: 5px solid #8B5CF6; padding: 15px;'>
-                        <div class='kpi-label'>📊 % DE PRIMA ALCANZADO</div>
-                        <div class='kpi-value' style='color:#5B21B6; font-size: 26px;'>{str_pct_alcanzado}</div>
-                        <div class='kpi-sub' style='color:#8B5CF6; font-size: 11px;'>⚖ Eficiencia de lo cobrado</div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-            with col_c_4:
-                st.markdown(f"""
-                    <div class='kpi-card' style='border-left: 5px solid #3B82F6; padding: 15px;'>
-                        <div class='kpi-label'>⏳ PREVISIÓN PENDIENTE</div>
-                        <div class='kpi-value' style='color:#1D4ED8; font-size: 26px;'>{str_pendiente}</div>
-                        <div class='kpi-sub' style='color:#3B82F6; font-size: 11px;'>ℹ Meses con datos sin cobrar</div>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-            if meses_grafico_nombres:
-                st.markdown("<br>", unsafe_allow_html=True)
-                fig_econ = go.Figure()
-                
-                fig_econ.add_trace(go.Scatter(
-                    x=meses_grafico_nombres, y=montos_grafico_alcanzado,
-                    mode='lines+markers+text', name='$ Alcanzado a Cobrar',
-                    line=dict(color='#10B981', width=4),
-                    marker=dict(size=8, color='#10B981'),
-                    text=[f"${v:,.0f}".replace(",", ".") for v in montos_grafico_alcanzado],
-                    textposition='top center',
-                    fill='tozeroy',
-                    fillcolor='rgba(34, 197, 94, 0.25)', 
-                    hovertemplate='<b>%{x}</b><br>Alcanzado: %{y:$,.0f}<extra></extra>'
-                ))
-                
-                fig_econ.add_trace(go.Scatter(
-                    x=meses_grafico_nombres, y=montos_grafico_maximo,
-                    mode='lines', name='$ Monto Máximo',
-                    line=dict(color='#94A3B8', width=2, dash='dash'),
-                    hoverinfo='skip'
-                ))
-                
-                fig_econ.add_trace(go.Scatter(
-                    x=meses_grafico_nombres, y=montos_grafico_perdida,
-                    mode='lines+markers', name='$ de Pérdida',
-                    line=dict(color='#EF4444', width=2),
-                    marker=dict(size=6, color='#EF4444'),
-                    fill='tozeroy',
-                    fillcolor='rgba(239, 68, 68, 0.22)', 
-                    hovertemplate='<b>%{x}</b><br>Pérdida Nominal: %{y:$,.0f}<extra></extra>'
-                ))
-                
-                fig_econ.update_layout(
-                    hovermode='x unified',
-                    yaxis=dict(title='Monto en Pesos ($)', showgrid=True, gridcolor='#E2E8F0'),
-                    xaxis=dict(showgrid=False),
-                    margin=dict(l=40, r=40, t=20, b=40),
-                    height=420,
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                )
-                st.plotly_chart(fig_econ, use_container_width=True)
-    else:
-        st.info("No se localizó un historial anual para estructurar la matriz de llaves.")
+            if x_m:
+                fig_ec = go.Figure()
+                fig_ec.add_trace(go.Scatter(x=x_m, y=y_alc, mode='lines+markers+text', name='$ Alcanzado', line=dict(color='#10B981', width=4), text=[f"${v:,.0f}".replace(",", ".") for v in y_alc], textposition='top center', fill='tozeroy', fillcolor='rgba(34, 197, 94, 0.25)'))
+                fig_ec.add_trace(go.Scatter(x=x_m, y=y_max, mode='lines', name='$ Máximo', line=dict(color='#94A3B8', width=2, dash='dash')))
+                fig_ec.add_trace(go.Scatter(x=x_m, y=y_per, mode='lines+markers', name='$ Pérdida', line=dict(color='#EF4444', width=2), fill='tozeroy', fillcolor='rgba(239, 68, 68, 0.22)'))
+                fig_ec.update_layout(hovermode='x unified', height=420, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.plotly_chart(fig_ec, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# 8. PESTAÑA: ANÁLISIS DE RECLAMOS
+# 8. PESTAÑA: ANÁLISIS DE RECLAMOS (INTACTO)
 # ------------------------------------------------------------------------------
 with tab_reclamos:
     st.markdown("### 📋 Análisis de Reclamos")
-    st.markdown("Esta sección evalúa el volumen y porcentaje de reclamos operativos de forma independiente.")
-    
     df_rec_base = df_reclamos_raw.copy()
-    
     if 'Fecha Cierre' in df_rec_base.columns:
         df_rec_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_rec_base['Fecha Cierre'], dayfirst=True, errors='coerce')
         df_rec_base['Año_Cierre'] = df_rec_base['Fecha_Cierre_Clean'].dt.year
         df_rec_base['Mes_Cierre_Num'] = df_rec_base['Fecha_Cierre_Clean'].dt.month
-        
         df_rec_base = df_rec_base.dropna(subset=['Año_Cierre', 'Mes_Cierre_Num'])
         df_rec_base['Año_Cierre'] = df_rec_base['Año_Cierre'].astype(int)
         df_rec_base['Mes_Cierre_Num'] = df_rec_base['Mes_Cierre_Num'].astype(int)
         
-        # --- FILTROS INDEPENDIENTES ---
-        col_r1, col_r2 = st.columns(2)
-        with col_r1:
-            anios_rec_disponibles = sorted(df_rec_base['Año_Cierre'].unique(), reverse=True)
-            anio_rec_sel = st.selectbox("Seleccione Año de Cierre (Reclamos):", options=anios_rec_disponibles, key="sb_anio_rec")
-        with col_r2:
-            df_rec_anio = df_rec_base[df_rec_base['Año_Cierre'] == anio_rec_sel]
-            meses_rec_disponibles = sorted(df_rec_anio['Mes_Cierre_Num'].unique())
-            opciones_meses_rec = {m: MESES_ES[m] for m in meses_rec_disponibles}
-            meses_rec_sel = st.multiselect("Seleccione Mes(es) de Cierre:", options=list(opciones_meses_rec.keys()), format_func=lambda x: opciones_meses_rec[x], default=meses_rec_disponibles, key="ms_mes_rec")
+        with st.expander("⚙️ Filtros de Reclamos", expanded=False):
+            col_r1, col_r2 = st.columns(2)
+            with col_r1: anio_rec_sel = st.selectbox("Año:", options=sorted(df_rec_base['Año_Cierre'].unique(), reverse=True), key="sb_anio_rec")
+            with col_r2: 
+                df_rec_a = df_rec_base[df_rec_base['Año_Cierre'] == anio_rec_sel]
+                m_disp = sorted(df_rec_a['Mes_Cierre_Num'].unique())
+                meses_rec_sel = st.multiselect("Mes(es):", options=m_disp, format_func=lambda x: MESES_ES[x], default=m_disp, key="ms_mes_rec")
         
-        df_rec_filtrado = df_rec_anio[df_rec_anio['Mes_Cierre_Num'].isin(meses_rec_sel)]
+        df_rec_filtrado = df_rec_a[df_rec_a['Mes_Cierre_Num'].isin(meses_rec_sel)]
         
-        # --- 1. GRÁFICO DE LÍNEAS (% DE RECLAMOS MENSUAL) ---
         st.markdown("---")
         st.markdown("#### 📈 Evolución Mensual de Reclamos")
-        
         line_data_rec = []
-        for m_num in meses_rec_disponibles:
-            df_m = df_rec_anio[df_rec_anio['Mes_Cierre_Num'] == m_num]
-            
-            c_reclamo = df_m['Reclamo'].notna().sum() if 'Reclamo' in df_m.columns else 0
-            c_contactado = df_m['Contactado'].notna().sum() if 'Contactado' in df_m.columns else 0
-            c_vacios = df_m['Estado'].isna().sum() if 'Estado' in df_m.columns else 0
-            
-            denom = c_contactado + c_reclamo
-            pct = round((c_reclamo / denom * 100), 1) if denom > 0 else 0.0
-            
-            line_data_rec.append({
-                "Mes_Nombre": MESES_ES[m_num],
-                "Mes_Num": m_num,
-                "Pct_Reclamo": pct,
-                "Cant_Reclamo": c_reclamo,
-                "Cant_Contactado": c_contactado,
-                "Cant_Vacios": c_vacios
-            })
+        for m_num in m_disp:
+            df_m = df_rec_a[df_rec_a['Mes_Cierre_Num'] == m_num]
+            cr, cc, cv = df_m['Reclamo'].notna().sum() if 'Reclamo' in df_m.columns else 0, df_m['Contactado'].notna().sum() if 'Contactado' in df_m.columns else 0, df_m['Estado'].isna().sum() if 'Estado' in df_m.columns else 0
+            pct = round((cr / (cc + cr) * 100), 1) if (cc + cr) > 0 else 0.0
+            line_data_rec.append({"Mes_Nombre": MESES_ES[m_num], "Mes_Num": m_num, "Pct_Reclamo": pct, "Cant_Reclamo": cr, "Cant_Contactado": cc, "Cant_Vacios": cv})
             
         if line_data_rec:
-            df_line_rec = pd.DataFrame(line_data_rec).sort_values("Mes_Num")
-            fig_line_rec = go.Figure()
+            df_lr = pd.DataFrame(line_data_rec).sort_values("Mes_Num")
+            fig_l_rec = go.Figure(go.Scatter(x=df_lr['Mes_Nombre'], y=df_lr['Pct_Reclamo'], mode='lines+markers+text', line=dict(color='#EF4444', width=4), text=df_lr['Pct_Reclamo'].apply(lambda x: f"{x}%"), textposition='top center', customdata=df_lr[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values, hovertemplate="<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos: %{customdata[0]}<br>Contactados: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"))
+            fig_l_rec.update_layout(yaxis=dict(title='%', range=[0, max(df_lr['Pct_Reclamo'])+10 if not df_lr.empty else 100]), height=400, hovermode='x unified', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+            st.plotly_chart(fig_l_rec, use_container_width=True)
             
-            custom_hover_rec = "<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos: %{customdata[0]}<br>Contactados: %{customdata[1]}<br>Celdas Vacías (Estado): %{customdata[2]}<extra></extra>"
-            matrix_rec = df_line_rec[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values
+            st.markdown("---")
+            if 'Reclamo' in df_rec_filtrado.columns:
+                df_rc = df_rec_filtrado.dropna(subset=['Reclamo'])
+                if not df_rc.empty:
+                    c_rec = df_rc['Reclamo'].value_counts().reset_index()
+                    c_rec.columns = ['Categoria', 'Cantidad']
+                    fig_f = go.Figure(go.Funnel(y=c_rec['Categoria'], x=c_rec['Cantidad'], textinfo="value+percent initial", marker={"color": ["#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE"] * 10}))
+                    fig_f.update_layout(height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_f, use_container_width=True)
+                    
+            st.markdown("---")
+            areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
+            cc_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
+            a_stats = {a: {'total': df_rec_filtrado[a].notna().sum(), 'pct': round((df_rec_filtrado[a].notna().sum() / (cc_tot + df_rec_filtrado[a].notna().sum()) * 100), 1) if (cc_tot + df_rec_filtrado[a].notna().sum()) > 0 else 0.0} for a in areas_cols if a in df_rec_filtrado.columns and df_rec_filtrado[a].notna().sum() > 0}
             
-            fig_line_rec.add_trace(go.Scatter(
-                x=df_line_rec['Mes_Nombre'], y=df_line_rec['Pct_Reclamo'],
-                mode='lines+markers+text', name='% Reclamos',
-                line=dict(color='#EF4444', width=4),
-                marker=dict(size=8, color='#EF4444'),
-                text=df_line_rec['Pct_Reclamo'].apply(lambda x: f"{x}%"),
-                textposition='top center',
-                customdata=matrix_rec, hovertemplate=custom_hover_rec
-            ))
-            
-            fig_line_rec.update_layout(
-                yaxis=dict(title='Porcentaje (%)', range=[0, max(df_line_rec['Pct_Reclamo']) + 10 if not df_line_rec.empty else 100], showgrid=True, gridcolor='#E2E8F0'),
-                xaxis=dict(showgrid=False),
-                margin=dict(l=40, r=40, t=20, b=40),
-                height=400,
-                hovermode='x unified',
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
-            )
-            st.plotly_chart(fig_line_rec, use_container_width=True)
-        else:
-            st.info("No hay datos suficientes para el gráfico de evolución.")
-            
-        # --- 2. GRÁFICO DE EMBUDO (CATEGORÍAS DE RECLAMO) ---
-        st.markdown("---")
-        st.markdown("#### 🌪️ Distribución de Categorías de Reclamo (Meses Seleccionados)")
-        
-        if 'Reclamo' in df_rec_filtrado.columns:
-            df_reclamo_clean = df_rec_filtrado.dropna(subset=['Reclamo'])
-            if not df_reclamo_clean.empty:
-                counts_reclamo = df_reclamo_clean['Reclamo'].value_counts().reset_index()
-                counts_reclamo.columns = ['Categoria', 'Cantidad']
+            f_area, f_cat = None, None
+            if a_stats:
+                s_areas = sorted(list(a_stats.keys()), key=lambda x: a_stats[x]['total'])
+                c_per_a = {a: df_rec_filtrado[a].value_counts() for a in s_areas}
+                all_cats = set()
+                for counts in c_per_a.values(): all_cats.update(counts.index)
+                l_cats = sorted(list(all_cats))
+                a_cats = []
                 
-                fig_funnel = go.Figure(go.Funnel(
-                    y=counts_reclamo['Categoria'],
-                    x=counts_reclamo['Cantidad'],
-                    textinfo="value+percent initial",
-                    marker={"color": ["#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE"] * 10}
-                ))
-                fig_funnel.update_layout(margin=dict(l=20, r=20, t=20, b=20), height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_funnel, use_container_width=True)
-            else:
-                st.info("No se registraron categorías de reclamo para este período.")
-        else:
-            st.warning("Columna 'Reclamo' no encontrada.")
-            
-        # --- 3. GRÁFICO DE BARRAS APILADAS POR ÁREA Y CATEGORÍA ---
-        st.markdown("---")
-        st.markdown("#### 🏢 Impacto y Volumen de Reclamos por Área (Meses Seleccionados)")
-        
-        areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
-        
-        c_contactado_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
-        
-        area_stats = {}
-        for area in areas_cols:
-            if area in df_rec_filtrado.columns:
-                c_area = df_rec_filtrado[area].notna().sum()
-                if c_area > 0: 
-                    denom_area = c_contactado_tot + c_area
-                    pct_area = round((c_area / denom_area * 100), 1) if denom_area > 0 else 0.0
-                    area_stats[area] = {'total': c_area, 'pct': pct_area}
-        
-        filtro_area = None
-        filtro_cat = None
-        
-        if area_stats:
-            sorted_areas = sorted(list(area_stats.keys()), key=lambda x: area_stats[x]['total'])
-            cat_counts_per_area = {area: df_rec_filtrado[area].value_counts() for area in sorted_areas}
-            
-            all_categories = set()
-            for counts in cat_counts_per_area.values():
-                all_categories.update(counts.index)
-            
-            # ¡CORRECCIÓN CRÍTICA 1!: "sorted" fuerza a que el orden de categorías (y colores) nunca cambie
-            list_cats = sorted(list(all_categories))
-            added_cats = [] 
-            
-            fig_bar_areas = go.Figure()
-            
-            for cat in list_cats:
-                x_vals = []
-                customdata_pct = []
+                fig_ba = go.Figure()
+                for cat in l_cats:
+                    x_v, cd_p = [c_per_a[a].get(cat, 0) for a in s_areas], [a_stats[a]['pct'] for a in s_areas]
+                    if sum(x_v) > 0:
+                        a_cats.append(cat)
+                        fig_ba.add_trace(go.Bar(y=s_areas, x=x_v, name=str(cat), orientation='h', text=[f"{v}" if v>0 else "" for v in x_v], textposition='inside', customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>"))
+                fig_ba.update_layout(barmode='stack', height=400 if len(s_areas)>3 else 280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+                st.info("💡 Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
+                try:
+                    ev = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
+                    if ev and 'selection' in ev and ev['selection'].get('points'):
+                        pto = ev['selection']['points'][0]
+                        f_area, c_idx = pto.get('y'), pto.get('curveNumber')
+                        if c_idx is not None and c_idx < len(a_cats): f_cat = a_cats[c_idx]
+                except TypeError: st.plotly_chart(fig_ba, use_container_width=True)
                 
-                for area in sorted_areas:
-                    count = cat_counts_per_area[area].get(cat, 0)
-                    x_vals.append(count)
-                    customdata_pct.append(area_stats[area]['pct'])
-                
-                if sum(x_vals) > 0:
-                    added_cats.append(cat)
-                    fig_bar_areas.add_trace(go.Bar(
-                        y=sorted_areas, 
-                        x=x_vals,
-                        name=str(cat),
-                        orientation='h',
-                        text=[f"{v}" if v > 0 else "" for v in x_vals],
-                        textposition='inside',
-                        hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cantidad:</b> %{x}<br><b>% Reclamo Total del Área:</b> %{customdata}%<extra></extra>",
-                        customdata=customdata_pct
-                    ))
-
-            fig_bar_areas.update_layout(
-                barmode='stack',
-                height=400 if len(sorted_areas) > 3 else 280,
-                margin=dict(l=20, r=20, t=20, b=20),
-                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-            )
+            st.markdown("---")
+            st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
+            cols_req = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
+            cols_enc = [next((c for c in df_rec_filtrado.columns if str(c).strip().lower()==str(col).lower()), None) for col in cols_req]
+            cols_enc = [c for c in cols_enc if c]
             
-            st.info("💡 **Tip interactivo:** Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
-            
-            try:
-                # ¡CORRECCIÓN CRÍTICA 2!: Agregamos key="grafico_reclamos_apilados"
-                chart_event = st.plotly_chart(fig_bar_areas, use_container_width=True, on_select="rerun", selection_mode="points", key="grafico_reclamos_apilados")
-                
-                if chart_event and 'selection' in chart_event and chart_event['selection'].get('points'):
-                    pto = chart_event['selection']['points'][0]
-                    filtro_area = pto.get('y')
-                    curve_idx = pto.get('curveNumber')
-                    if curve_idx is not None and curve_idx < len(added_cats):
-                        filtro_cat = added_cats[curve_idx]
-            except TypeError:
-                st.plotly_chart(fig_bar_areas, use_container_width=True)
-                st.warning("⚠️ Tu versión de Streamlit no soporta clics en gráficos. Actualiza ejecutando: pip install --upgrade streamlit")
-
-        else:
-            st.warning("No se registraron datos en las columnas de áreas para el período seleccionado.")
-
-        # --- 4. TABLA DE DETALLE DE RECLAMOS OPERATIVOS (DINÁMICA) ---
-        st.markdown("---")
-        if filtro_area and filtro_cat:
-            st.markdown(f"#### 📋 Detalle de Reclamos Operativos (Filtrado: Área **'{filtro_area}'** ➔ Falla **'{filtro_cat}'**)")
-        else:
-            st.markdown("#### 📋 Detalle de Reclamos Operativos (Visualizando Todos)")
-            
-        columnas_solicitadas = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
-        columnas_encontradas = []
-        
-        for col in columnas_solicitadas:
-            col_match = next((c for c in df_rec_filtrado.columns if str(c).strip().lower() == str(col).lower()), None)
-            if col_match:
-                columnas_encontradas.append(col_match)
-                
-        if columnas_encontradas:
-            col_concat = next((c for c in columnas_encontradas if 'concat' in str(c).lower()), None)
-            df_tabla = df_rec_filtrado.copy()
-            
-            # --- APLICAMOS EL FILTRO DEL CLIC ---
-            if filtro_area and filtro_cat and filtro_area in df_tabla.columns:
-                df_tabla = df_tabla[df_tabla[filtro_area] == filtro_cat]
-            
-            df_tabla = df_tabla[columnas_encontradas]
-            
-            if col_concat:
-                df_tabla = df_tabla.dropna(subset=[col_concat])
-                
-            if len(df_tabla) > 0:
-                st.dataframe(df_tabla, use_container_width=True, hide_index=True)
-            else:
-                st.info("No hay detalles o comentarios registrados para este cruce específico.")
-        else:
-            st.info("No se encontraron las columnas solicitadas en la base de datos para armar la tabla.")
-            
-    else:
-        st.error("No se encontró la columna 'Fecha Cierre' indispensable para la pestaña Análisis de Reclamos.")
+            if cols_enc:
+                col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
+                df_t = df_rec_filtrado[df_rec_filtrado[f_area]==f_cat] if f_area and f_cat and f_area in df_rec_filtrado.columns else df_rec_filtrado
+                df_t = df_t[cols_enc]
+                if col_cc: df_t = df_t.dropna(subset=[col_cc])
+                if len(df_t) > 0: st.dataframe(df_t, use_container_width=True, hide_index=True)
+                else: st.info("No hay detalles registrados para este cruce.")
+    else: st.error("Columna 'Fecha Cierre' no encontrada.")
