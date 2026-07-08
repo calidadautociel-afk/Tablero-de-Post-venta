@@ -1662,8 +1662,9 @@ with tab_reclamos:
             for counts in cat_counts_per_area.values():
                 all_categories.update(counts.index)
             
-            list_cats = list(all_categories)
-            added_cats = [] # Mantiene el registro exacto del orden de los colores para el clic
+            # ¡CORRECCIÓN CRÍTICA 1!: "sorted" fuerza a que el orden de categorías (y colores) nunca cambie
+            list_cats = sorted(list(all_categories))
+            added_cats = [] 
             
             fig_bar_areas = go.Figure()
             
@@ -1697,21 +1698,19 @@ with tab_reclamos:
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             
-            # --- CAPTURA DEL CLIC EN EL GRÁFICO ---
             st.info("💡 **Tip interactivo:** Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
             
             try:
-                # Requiere Streamlit >= 1.35.0
-                chart_event = st.plotly_chart(fig_bar_areas, use_container_width=True, on_select="rerun", selection_mode="points")
+                # ¡CORRECCIÓN CRÍTICA 2!: Agregamos key="grafico_reclamos_apilados"
+                chart_event = st.plotly_chart(fig_bar_areas, use_container_width=True, on_select="rerun", selection_mode="points", key="grafico_reclamos_apilados")
                 
-                if chart_event and 'selection' in chart_event and chart_event['selection']['points']:
+                if chart_event and 'selection' in chart_event and chart_event['selection'].get('points'):
                     pto = chart_event['selection']['points'][0]
                     filtro_area = pto.get('y')
                     curve_idx = pto.get('curveNumber')
                     if curve_idx is not None and curve_idx < len(added_cats):
                         filtro_cat = added_cats[curve_idx]
             except TypeError:
-                # Fallback por si la versión de Streamlit es antigua
                 st.plotly_chart(fig_bar_areas, use_container_width=True)
                 st.warning("⚠️ Tu versión de Streamlit no soporta clics en gráficos. Actualiza ejecutando: pip install --upgrade streamlit")
 
@@ -1737,7 +1736,7 @@ with tab_reclamos:
             col_concat = next((c for c in columnas_encontradas if 'concat' in str(c).lower()), None)
             df_tabla = df_rec_filtrado.copy()
             
-            # --- APLICAMOS EL FILTRO DEL CLIC SI EL USUARIO TOCÓ EL GRÁFICO ---
+            # --- APLICAMOS EL FILTRO DEL CLIC ---
             if filtro_area and filtro_cat and filtro_area in df_tabla.columns:
                 df_tabla = df_tabla[df_tabla[filtro_area] == filtro_cat]
             
