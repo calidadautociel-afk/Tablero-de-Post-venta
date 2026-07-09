@@ -109,10 +109,6 @@ except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
 
-# --- BÚSQUEDA DINÁMICA DE COLUMNAS Q4 Y Q13 (Base Marca) ---
-col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' in col), None)
-col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
-
 # --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA ---
 def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     hoy = datetime.date.today()
@@ -136,8 +132,11 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     if f'{key_prefix}_marca' not in st.session_state:
         st.session_state[f'{key_prefix}_marca'] = marcas_disp[:1] if marcas_disp else []
 
+    # SOLUCIÓN AL BUG: Título de expander único por pestaña
+    titulo_unico = f"⚙️ Filtros de visualización ({key_prefix.replace('_', ' ').title()})"
+
     # Renderizado de UI de Filtros
-    with st.expander("⚙️ Filtros de visualización (Clic para editar)", expanded=False):
+    with st.expander(titulo_unico, expanded=False):
         c1, c2, c3 = st.columns(3)
         with c1:
             sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
