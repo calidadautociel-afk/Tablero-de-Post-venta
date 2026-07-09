@@ -109,6 +109,10 @@ except Exception as e:
     st.error(f"Error al conectar con la base de datos: {e}")
     st.stop()
 
+# --- BÚSQUEDA DINÁMICA DE COLUMNAS Q4 Y Q13 (Base Marca) ---
+col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' in col), None)
+col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
+
 # --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA ---
 def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     hoy = datetime.date.today()
