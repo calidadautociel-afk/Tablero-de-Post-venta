@@ -136,10 +136,8 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     if f'{key_prefix}_marca' not in st.session_state:
         st.session_state[f'{key_prefix}_marca'] = marcas_disp[:1] if marcas_disp else []
 
-    # SOLUCIÓN AL BUG: Título de expander único por pestaña
     titulo_unico = f"⚙️ Filtros de visualización ({key_prefix.replace('_', ' ').title()})"
 
-    # Renderizado de UI de Filtros
     with st.expander(titulo_unico, expanded=False):
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -149,7 +147,6 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
         with c3:
             sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
 
-    # Aplicación de los filtros a los DataFrames
     df_m_filt = df_m_raw[df_m_raw['Año'].isin(sel_años) & df_m_raw['Mes'].isin(sel_meses)]
     df_i_filt = df_i_raw[df_i_raw['Año'].isin(sel_años) & df_i_raw['Mes'].isin(sel_meses)]
 
@@ -159,18 +156,35 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
 
     return df_m_filt, df_i_filt, sel_meses
 
-# --- CÁLCULOS MÉTRICAS ---
+# --- CÁLCULOS MÉTRICAS (ACTUALIZADO PARA LEER TEXTOS DE JULIO) ---
 def calcular_metricas_nps(df, columna):
     if columna not in df.columns: return 0.0, 0, 0, 0
-    valores = pd.to_numeric(df[columna], errors='coerce').dropna()
+    
+    # Diccionario de traducción para mantener compatibilidad con Rankings y Prima de Calidad
+    mapeo_textos = {
+        'muy satisfecho': 10, 'satisfecho': 8, 'insatisfecho': 1, 'muy insatisfecho': 1,
+        'sí': 10, 'si': 10, 'no': 1,
+        'superó mis expectativas': 10, 'cumplió mis expectativas': 8, 'no cumplió mis expectativas': 1
+    }
+    
+    # Si la columna contiene texto (Julio en adelante), se traduce. Si son números (Ene-Jun), se mantienen.
+    if df[columna].dtype == object:
+        valores_procesados = df[columna].astype(str).str.strip().str.lower().map(mapeo_textos).fillna(pd.to_numeric(df[columna], errors='coerce'))
+    else:
+        valores_procesados = pd.to_numeric(df[columna], errors='coerce')
+        
+    valores = valores_procesados.dropna()
     total = len(valores)
     if total == 0: return 0.0, 0, 0, 0
+    
     promotores = len(valores[valores >= 9])
     detractores = len(valores[valores <= 6])
     neutros = len(valores[(valores >= 7) & (valores <= 8)])
+    
     pct_promotores = (promotores / total) * 100
     pct_detractores = (detractores / total) * 100
     nps_score = max(0.0, round(pct_promotores - pct_detractores, 1))
+    
     return nps_score, promotores, neutros, detractores
 
 def calcular_promedio(df, columna):
@@ -198,15 +212,36 @@ def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     )
     return fig
 
-# --- GRÁFICOS DE TORTA ---
+# --- GRÁFICOS DE TORTA (ACTUALIZADO) ---
 def crear_torta(df, columna, titulo):
-    if columna not in df.columns:
+    if columna not in df.columns or df[columna].dropna().empty:
         fig = go.Figure()
-        fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.85, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, height=160, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        fig.update_layout(
+            title={'text': f"<b>{titulo}</b><br><span style='font-size:11px;color:#94A3B8;font-weight:normal;'>Sin datos en este período</span>", 'x': 0.5, 'y': 0.5, 'xanchor': 'center', 'yanchor': 'middle', 'font': {'size': 12, 'color': '#475569'}}, 
+            height=260, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+        )
         return fig
+        
     datos = df[columna].value_counts()
-    fig = go.Figure(data=[go.Pie(labels=datos.index, values=datos.values, hole=.5, textinfo='label+percent', textposition='inside', insidetextorientation='radial')])
-    fig.update_layout(title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 12, 'color': '#475569'}}, margin=dict(l=10, r=10, t=40, b=10), height=160, showlegend=False, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=datos.index, 
+        values=datos.values, 
+        hole=.35, 
+        textinfo='value+percent', 
+        textposition='inside', 
+        insidetextorientation='radial'
+    )])
+    
+    fig.update_layout(
+        title={'text': f"<b>{titulo}</b>", 'x': 0.5, 'y': 0.95, 'xanchor': 'center', 'yanchor': 'top', 'font': {'size': 13, 'color': '#475569'}}, 
+        margin=dict(l=10, r=10, t=50, b=30), 
+        height=280, 
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="center", x=0.5, font=dict(size=10)),
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
     return fig
 
 # --- FUNCIÓN GENERADORA DE REPORTE PDF ---
@@ -427,21 +462,28 @@ with tab_monitor:
                 
             st.markdown("<br>", unsafe_allow_html=True)
             subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+            
             with subtab_agendamiento:
                 c1, c2 = st.columns(2)
                 with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
                 with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q6 - Satisfacción instalaciones")[0], "Q6 - Instalaciones", mini=True), use_container_width=True)
+            
             with subtab_asesor:
-                c1, c2, c3, c4 = st.columns(4)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q7 - Cortesía y Amabilidad")[0], "Q7 - Cortesía", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q8 - Competencia Asesor de Servicio")[0], "Q8 - Competencia", mini=True), use_container_width=True)
-                with c3: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto", mini=True), use_container_width=True)
-                with c4: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q11 - Explicación trabajo - costo")[0], "Q11 - Expl. Trabajo", mini=True), use_container_width=True)
+                c1, c2, c3 = st.columns(3)
+                with c1: st.plotly_chart(crear_torta(df_m1, "Q7 - Cortesía y Amabilidad", "Q7 - Cortesía"), use_container_width=True)
+                with c2: st.plotly_chart(crear_torta(df_m1, "Q8 - Competencia Asesor de Servicio", "Q8 - Competencia"), use_container_width=True)
+                with c3: st.plotly_chart(crear_torta(df_m1, "Q11 - Explicación trabajo - costo", "Q11 - Expl. Trabajo"), use_container_width=True)
+                
+                if 'Q10 - Explicación presupuesto' in df_m1.columns and not df_m1['Q10 - Explicación presupuesto'].dropna().empty:
+                    with st.expander("📊 Ver KPI Histórico Descontinuado (Q10 - Presupuesto)"):
+                        st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto (Ene-Jun)", mini=True), use_container_width=True)
+
             with subtab_taller:
                 c1, c2, c3 = st.columns(3)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q12 - Calidad del trabajo")[0], "Q12 - Calidad", mini=True), use_container_width=True)
+                with c1: st.plotly_chart(crear_torta(df_m1, "Q12 - Calidad del trabajo", "Q12 - Calidad"), use_container_width=True)
                 with c2: st.plotly_chart(crear_torta(df_m1, col_q13, "Q13 - FIR"), use_container_width=True)
                 with c3: st.plotly_chart(crear_torta(df_m1, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
+            
             with subtab_contacto:
                 st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
 
@@ -485,7 +527,11 @@ with tab_monitor:
         with st.container(border=True):
             st.markdown(f"**🏢 Marca (Filtro: {st.session_state.filtro_comentarios_marca})**")
             if st.session_state.filtro_comentarios_marca != 'Todos': st.button("🔄 Ver Todos (Marca)", on_click=set_filtro_marca, args=('Todos',))
-            if "Q3 - Verbalización" in df_m1.columns:
+            
+            # Incorporación de "Verbalización Final" si existe
+            cols_verb = [c for c in ["Q3 - Verbalización", "Verbalización Final"] if c in df_m1.columns]
+            
+            if cols_verb:
                 df_com_m = df_m1.copy()
                 if st.session_state.filtro_comentarios_marca != 'Todos':
                     q_base = pd.to_numeric(df_com_m["Q1 - Satisfacción general"], errors='coerce')
@@ -495,9 +541,10 @@ with tab_monitor:
                     
                 col_nombre_m = 'Nombre Principal' if 'Nombre Principal' in df_com_m.columns else next((c for c in df_com_m.columns if 'Nombre' in c or 'Cliente' in c), None)
                 col_fecha_m = 'Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_com_m.columns else next((c for c in df_com_m.columns if 'Fecha' in c), None)
-                cols_m = [c for c in [col_nombre_m, col_fecha_m, "Marca"] if c and c in df_com_m.columns] + ["Q3 - Verbalización"]
                 
-                cm_view = df_com_m[cols_m].dropna(subset=["Q3 - Verbalización"])
+                cols_m = [c for c in [col_nombre_m, col_fecha_m, "Marca"] if c and c in df_com_m.columns] + cols_verb
+                
+                cm_view = df_com_m[cols_m].dropna(subset=cols_verb, how='all')
                 if len(cm_view) > 0: st.dataframe(cm_view, use_container_width=True, hide_index=True)
                 else: st.info("Sin comentarios para este segmento.")
             
@@ -670,11 +717,15 @@ with tab_carga:
                         fig_fir.update_layout(barmode='stack', title="Motivo vs. Reparado en 1ra Visita", height=350 if len(df_m_bar)>3 else 250, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                         st.plotly_chart(fig_fir, use_container_width=True)
                         
-                if "Q3 - Verbalización" in df_t4_m.columns:
+                cols_verb = [c for c in ["Q3 - Verbalización", "Verbalización Final"] if c in df_t4_m.columns]
+                if cols_verb:
                     st.markdown("#### 💬 Lupa Cualitativa")
                     motivo_sel = st.selectbox("Filtrar comentarios:", options=["Ver Todos"] + sorted(df_t4_m[col_q4].dropna().unique()), key="sel_m")
                     df_mostrar_q4 = df_t4_m[df_t4_m[col_q4] == motivo_sel] if motivo_sel != "Ver Todos" else df_t4_m
-                    df_mostrar_q4 = df_mostrar_q4[["Fecha de la Encuesta", "Marca", col_q4, "Q1 - Satisfacción general", "Q3 - Verbalización"]].dropna(subset=["Q3 - Verbalización"])
+                    
+                    cols_mostrar = ["Fecha de la Encuesta", "Marca", col_q4, "Q1 - Satisfacción general"] + cols_verb
+                    df_mostrar_q4 = df_mostrar_q4[cols_mostrar].dropna(subset=cols_verb, how='all')
+                    
                     if len(df_mostrar_q4) > 0: st.dataframe(df_mostrar_q4, use_container_width=True, hide_index=True)
                     else: st.info("No hay comentarios.")
             else: st.info("Columna de motivos (Q4) no encontrada.")
@@ -711,6 +762,7 @@ with tab_quejas:
                 cols_q = ["Fecha de la Encuesta", "Marca", "Q1 - Satisfacción general", "Q2 - Recomendación - taller"]
                 if col_asesor_key: cols_q.append(col_asesor_key)
                 if "Q3 - Verbalización" in df_t5_m.columns: cols_q.append("Q3 - Verbalización")
+                if "Verbalización Final" in df_t5_m.columns: cols_q.append("Verbalización Final")
                 st.dataframe(df_det[cols_q], use_container_width=True, hide_index=True)
             else: st.success("🎉 ¡Excelente! No se registraron detractores en este segmento.")
         else: st.info("Columnas de análisis no encontradas.")
