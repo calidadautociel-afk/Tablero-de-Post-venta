@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import math
+import datetime
+from fpdf import FPDF
+import io
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
     page_title="Indicadores y Seguimiento de Calidad Posventa - Autociel",
