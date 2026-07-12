@@ -1211,7 +1211,11 @@ with tab_reclamos:
             cc_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
             a_stats = {a: {'total': df_rec_filtrado[a].notna().sum(), 'pct': round((df_rec_filtrado[a].notna().sum() / (cc_tot + df_rec_filtrado[a].notna().sum()) * 100), 1) if (cc_tot + df_rec_filtrado[a].notna().sum()) > 0 else 0.0} for a in areas_cols if a in df_rec_filtrado.columns and df_rec_filtrado[a].notna().sum() > 0}
             
-            f_area, f_cat = None, None
+            if 'filtro_reclamos_area' not in st.session_state:
+                st.session_state.filtro_reclamos_area = None
+            if 'filtro_reclamos_cat' not in st.session_state:
+                st.session_state.filtro_reclamos_cat = None
+
             if a_stats:
                 s_areas = sorted(list(a_stats.keys()), key=lambda x: a_stats[x]['total'])
                 c_per_a = {a: df_rec_filtrado[a].value_counts() for a in s_areas}
@@ -1234,30 +1238,25 @@ with tab_reclamos:
                 try:
                     ev = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
                     
-                    # --- NUEVA CAPTURA A PRUEBA DE FALLOS ---
-                    puntos = None
-                    # Intentamos atrapar los puntos ya sea como diccionario o como objeto de Streamlit
-                    try:
-                        puntos = ev["selection"]["points"]
-                    except:
-                        try:
-                            puntos = ev.selection.points
-                        except:
-                            pass
-                            
-                    if puntos and len(puntos) > 0:
-                        pto = puntos[0]
-                        # Extraemos el Eje Y (Área) y el Índice de Curva (Falla) tolerando cualquier formato
-                        f_area = pto.get("y") if isinstance(pto, dict) else getattr(pto, "y", None)
-                        c_idx = pto.get("curveNumber") if isinstance(pto, dict) else getattr(pto, "curveNumber", getattr(pto, "curve_number", None))
-                        
-                        if c_idx is not None and int(c_idx) < len(fig_ba.data):
-                            f_cat = fig_ba.data[int(c_idx)].name
+                    if ev and getattr(ev, 'selection', None):
+                        pts = getattr(ev.selection, 'points', [])
+                        if pts:
+                            pto = pts[0]
+                            st.session_state.filtro_reclamos_area = pto.get("y", getattr(pto, "y", None))
+                            c_idx = pto.get("curveNumber", getattr(pto, "curve_number", getattr(pto, "curveNumber", None)))
+                            if c_idx is not None and int(c_idx) < len(fig_ba.data):
+                                st.session_state.filtro_reclamos_cat = fig_ba.data[int(c_idx)].name
+                        else:
+                            st.session_state.filtro_reclamos_area = None
+                            st.session_state.filtro_reclamos_cat = None
                 except Exception: 
-                    pass # Evitamos que la app colapse si el gráfico no detecta bien el clic
+                    pass
                 
             st.markdown("---")
+            f_area = st.session_state.filtro_reclamos_area
+            f_cat = st.session_state.filtro_reclamos_cat
             st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
+            
             cols_req = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
             cols_enc = [next((c for c in df_rec_filtrado.columns if str(c).strip().lower()==str(col).lower()), None) for col in cols_req]
             cols_enc = [c for c in cols_enc if c]
@@ -1266,7 +1265,6 @@ with tab_reclamos:
                 col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
                 
                 if f_area and f_cat and f_area in df_rec_filtrado.columns:
-                    # Filtro exacto limpiando espacios invisibles de las celdas
                     df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
                 else:
                     df_t = df_rec_filtrado
