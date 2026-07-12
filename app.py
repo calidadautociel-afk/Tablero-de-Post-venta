@@ -1,11 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
-import math
-import datetime
-from fpdf import FPDF
-import io
-
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
     page_title="Indicadores y Seguimiento de Calidad Posventa - Autociel",
@@ -376,45 +371,39 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
             pdf.cell(0, 7, "Excelente: No se detectan clientes detractores.", ln=True)
             
     return bytes(pdf.output())   
-
-
 # ==============================================================================
-# PANEL LATERAL EXCLUSIVO DE REPORTES PDF
-# ==============================================================================
-st.sidebar.subheader("📦 Reporte Consolidado")
-st.sidebar.caption("El reporte tomará los filtros configurados en la pestaña 'Monitor Global'.")
-
-if st.sidebar.button("⚙️ Pre-renderizar Informe PDF"):
-    try:
-        # Reconstruimos los filtros globales en base al estado del Monitor
-        sel_años_pdf = st.session_state.get('monitor_anio', [datetime.date.today().year])
-        sel_meses_pdf = st.session_state.get('monitor_mes', [MESES_ES.get(datetime.date.today().month, "Enero")])
-        sel_marcas_pdf = st.session_state.get('monitor_marca', [])
-        
-        df_pdf_m = df_marca_raw[df_marca_raw['Año'].isin(sel_años_pdf) & df_marca_raw['Mes'].isin(sel_meses_pdf)]
-        df_pdf_i = df_int_raw[df_int_raw['Año'].isin(sel_años_pdf) & df_int_raw['Mes'].isin(sel_meses_pdf)]
-        
-        if sel_marcas_pdf:
-            if 'Marca' in df_pdf_m.columns: df_pdf_m = df_pdf_m[df_pdf_m['Marca'].isin(sel_marcas_pdf)]
-            if 'Marca' in df_pdf_i.columns: df_pdf_i = df_pdf_i[df_pdf_i['Marca'].isin(sel_marcas_pdf)]
-
-        with st.sidebar.spinner("Compilando datos de todas las areas..."):
-            data_pdf = generar_reporte_pdf_bytes(df_pdf_m, df_pdf_i, sel_meses_pdf)
-            
-        st.sidebar.success("¡Reporte listo!")
-        st.sidebar.download_button(
-            label="📥 Descargar Reporte PDF", data=data_pdf,
-            file_name=f"Reporte_Calidad_Autociel_{'_'.join(sel_meses_pdf)}.pdf", mime="application/pdf"
-        )
-    except Exception as e:
-        st.sidebar.error(f"Error al estructurar el PDF: {e}")
-
-# ==============================================================================
-# TÍTULO PRINCIPAL
+# TÍTULO PRINCIPAL Y REPORTE CONSOLIDADO
 # ==============================================================================
 st.markdown("<h1 style='font-size: 36px; color: #1E293B; display: flex; align-items: center;'><span style='font-size: 40px; margin-right: 15px;'>📊</span> INDICADORES Y SEGUIMIENTO DE CALIDAD POSTVENTA AUTOCIEL</h1>", unsafe_allow_html=True)
-st.markdown("<br>", unsafe_allow_html=True)
 
+with st.expander("📦 Generar y Descargar Reporte Consolidado PDF", expanded=False):
+    st.caption("El reporte tomará los filtros configurados en la pestaña 'Monitor Global'.")
+    if st.button("⚙️ Pre-renderizar Informe PDF"):
+        try:
+            # Reconstruimos los filtros globales en base al estado del Monitor
+            sel_años_pdf = st.session_state.get('monitor_anio', [datetime.date.today().year])
+            sel_meses_pdf = st.session_state.get('monitor_mes', [MESES_ES.get(datetime.date.today().month, "Enero")])
+            sel_marcas_pdf = st.session_state.get('monitor_marca', [])
+            
+            df_pdf_m = df_marca_raw[df_marca_raw['Año'].isin(sel_años_pdf) & df_marca_raw['Mes'].isin(sel_meses_pdf)]
+            df_pdf_i = df_int_raw[df_int_raw['Año'].isin(sel_años_pdf) & df_int_raw['Mes'].isin(sel_meses_pdf)]
+            
+            if sel_marcas_pdf:
+                if 'Marca' in df_pdf_m.columns: df_pdf_m = df_pdf_m[df_pdf_m['Marca'].isin(sel_marcas_pdf)]
+                if 'Marca' in df_pdf_i.columns: df_pdf_i = df_pdf_i[df_pdf_i['Marca'].isin(sel_marcas_pdf)]
+
+            with st.spinner("Compilando datos de todas las areas..."):
+                data_pdf = generar_reporte_pdf_bytes(df_pdf_m, df_pdf_i, sel_meses_pdf)
+                
+            st.success("¡Reporte listo!")
+            st.download_button(
+                label="📥 Descargar Reporte PDF", data=data_pdf,
+                file_name=f"Reporte_Calidad_Autociel_{'_'.join(sel_meses_pdf)}.pdf", mime="application/pdf"
+            )
+        except Exception as e:
+            st.error(f"Error al estructurar el PDF: {e}")
+
+st.markdown("<br>", unsafe_allow_html=True)
 # ==============================================================================
 # PESTAÑAS PRINCIPALES
 # ==============================================================================
