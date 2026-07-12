@@ -118,22 +118,31 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     mes_actual_nombre = MESES_ES.get(hoy.month, "Enero")
     año_actual = hoy.year
 
-    # Listas disponibles
+    # Listas disponibles extraídas de los datos
     anios_disp = sorted(df_m_raw['Año'].unique(), reverse=True) if 'Año' in df_m_raw.columns else [año_actual]
     meses_disp = list(MESES_ES.values())
     marcas_disp = sorted(df_m_raw['Marca'].dropna().unique()) if 'Marca' in df_m_raw.columns else []
 
-    # Búsqueda segura del mes default (último disponible si el actual no tiene datos)
-    meses_existentes = df_m_raw[df_m_raw['Año'] == (anios_disp[0] if anios_disp else año_actual)]['Mes'].unique()
+    # --- LÓGICA DE VALORES POR DEFECTO ---
+    # Año Actual (Si no hay datos del año actual en la DB, toma el más reciente)
+    default_anio = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
+    
+    # Mes Actual (Si estamos en Julio y hay datos de Julio, lo setea. Si no, busca el último mes con datos del año seleccionado)
+    meses_existentes = df_m_raw[df_m_raw['Año'] == default_anio[0]]['Mes'].unique() if default_anio else []
     default_mes = [mes_actual_nombre] if mes_actual_nombre in meses_existentes else (meses_existentes[:1].tolist() if len(meses_existentes)>0 else [mes_actual_nombre])
+    
+    # Marca PEUGEOT por defecto (Ignorando mayúsculas/minúsculas para evitar errores)
+    default_marca = [m for m in marcas_disp if "peugeot" in str(m).lower()]
+    if not default_marca and marcas_disp:
+        default_marca = marcas_disp[:1] # Si no existe Peugeot en la DB, setea la primera marca que encuentre
 
-    # Inicializar Session State para esta pestaña específica
+    # Inicializar Session State para esta pestaña específica (solo se ejecuta la primera vez que carga)
     if f'{key_prefix}_anio' not in st.session_state:
-        st.session_state[f'{key_prefix}_anio'] = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
+        st.session_state[f'{key_prefix}_anio'] = default_anio
     if f'{key_prefix}_mes' not in st.session_state:
         st.session_state[f'{key_prefix}_mes'] = default_mes
     if f'{key_prefix}_marca' not in st.session_state:
-        st.session_state[f'{key_prefix}_marca'] = marcas_disp[:1] if marcas_disp else []
+        st.session_state[f'{key_prefix}_marca'] = default_marca
 
     titulo_unico = f"⚙️ Filtros de visualización ({key_prefix.replace('_', ' ').title()})"
 
@@ -146,6 +155,7 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
         with c3:
             sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
 
+    # Aplicación de los filtros a los DataFrames
     df_m_filt = df_m_raw[df_m_raw['Año'].isin(sel_años) & df_m_raw['Mes'].isin(sel_meses)]
     df_i_filt = df_i_raw[df_i_raw['Año'].isin(sel_años) & df_i_raw['Mes'].isin(sel_meses)]
 
@@ -154,7 +164,6 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
         if 'Marca' in df_i_filt.columns: df_i_filt = df_i_filt[df_i_filt['Marca'].isin(sel_marcas)]
 
     return df_m_filt, df_i_filt, sel_meses
-
 # --- CÁLCULOS MÉTRICAS (ACTUALIZADO PARA LEER TEXTOS DE JULIO) ---
 def calcular_metricas_nps(df, columna):
     if columna not in df.columns: return 0.0, 0, 0, 0
