@@ -541,7 +541,7 @@ with tab_monitor:
                     elif st.session_state.filtro_comentarios_marca == 'Neutro': df_com_m = df_com_m[(q_base >= 7) & (q_base <= 8)]
                     elif st.session_state.filtro_comentarios_marca == 'Detractor': df_com_m = df_com_m[q_base <= 6]
                     
-                col_nombre_m = 'Nombre Principal' if 'Nombre Principal' in df_com_m.columns else next((c for c in df_com_m.columns if 'Nombre' in c or 'Cliente' in c), None)
+                col_nombre_m = 'Nombre de cliente' if 'Nombre de cliente' in df_com_m.columns else ('Cliente' if 'Cliente' in df_com_m.columns else next((c for c in df_com_m.columns if 'Nombre' in c and 'Principal' not in c), None))
                 col_fecha_m = 'Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_com_m.columns else next((c for c in df_com_m.columns if 'Fecha' in c), None)
                 
                 cols_m = [c for c in [col_nombre_m, col_fecha_m, "Marca"] if c and c in df_com_m.columns] + cols_verb
