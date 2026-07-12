@@ -436,11 +436,6 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_
 # ------------------------------------------------------------------------------
 with tab_monitor:
     df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
-    # ------------------------------------------------------------------------------
-# 1. MONITOR GLOBAL COMPARATIVO
-# ------------------------------------------------------------------------------
-with tab_monitor:
-    df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
     
     # ==============================================================================
     # TENDENCIA ANUAL DE NPS (NUEVO DESPLEGABLE)
