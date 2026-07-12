@@ -1233,16 +1233,28 @@ with tab_reclamos:
                 
                 try:
                     ev = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
-                    if ev and isinstance(ev, dict) and 'selection' in ev:
-                        puntos = ev['selection'].get('points', [])
-                        if puntos:
-                            pto = puntos[0]
-                            f_area = pto.get('y')
-                            c_idx = pto.get('curveNumber')
-                            if c_idx is not None and c_idx < len(fig_ba.data):
-                                f_cat = fig_ba.data[c_idx].name
-                except TypeError: 
-                    st.plotly_chart(fig_ba, use_container_width=True)
+                    
+                    # --- NUEVA CAPTURA A PRUEBA DE FALLOS ---
+                    puntos = None
+                    # Intentamos atrapar los puntos ya sea como diccionario o como objeto de Streamlit
+                    try:
+                        puntos = ev["selection"]["points"]
+                    except:
+                        try:
+                            puntos = ev.selection.points
+                        except:
+                            pass
+                            
+                    if puntos and len(puntos) > 0:
+                        pto = puntos[0]
+                        # Extraemos el Eje Y (Área) y el Índice de Curva (Falla) tolerando cualquier formato
+                        f_area = pto.get("y") if isinstance(pto, dict) else getattr(pto, "y", None)
+                        c_idx = pto.get("curveNumber") if isinstance(pto, dict) else getattr(pto, "curveNumber", getattr(pto, "curve_number", None))
+                        
+                        if c_idx is not None and int(c_idx) < len(fig_ba.data):
+                            f_cat = fig_ba.data[int(c_idx)].name
+                except Exception: 
+                    pass # Evitamos que la app colapse si el gráfico no detecta bien el clic
                 
             st.markdown("---")
             st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
@@ -1254,7 +1266,7 @@ with tab_reclamos:
                 col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
                 
                 if f_area and f_cat and f_area in df_rec_filtrado.columns:
-                    # Filtro "bulletproof" limpiando espacios en ambos lados de la igualdad
+                    # Filtro exacto limpiando espacios invisibles de las celdas
                     df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
                 else:
                     df_t = df_rec_filtrado
