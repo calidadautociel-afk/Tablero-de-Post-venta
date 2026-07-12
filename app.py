@@ -436,6 +436,100 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_
 # ------------------------------------------------------------------------------
 with tab_monitor:
     df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
+    # ------------------------------------------------------------------------------
+# 1. MONITOR GLOBAL COMPARATIVO
+# ------------------------------------------------------------------------------
+with tab_monitor:
+    df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
+    
+    # ==============================================================================
+    # TENDENCIA ANUAL DE NPS (NUEVO DESPLEGABLE)
+    # ==============================================================================
+    with st.expander("📈 Ver anualmente el NPS (Evolución Mensual)", expanded=False):
+        # Tomamos los años seleccionados en el filtro de arriba
+        años_seleccionados = st.session_state.get('monitor_anio', [datetime.date.today().year])
+        
+        # Filtramos la base cruda SOLO por el año para asegurar traer todos los meses
+        df_m_anio_completo = df_marca_raw[df_marca_raw['Año'].isin(años_seleccionados)]
+        df_i_anio_completo = df_int_raw[df_int_raw['Año'].isin(años_seleccionados)]
+        
+        # Si hay marcas seleccionadas, las respetamos en la tendencia anual
+        marcas_seleccionadas = st.session_state.get('monitor_marca', [])
+        if marcas_seleccionadas:
+            if 'Marca' in df_m_anio_completo.columns:
+                df_m_anio_completo = df_m_anio_completo[df_m_anio_completo['Marca'].isin(marcas_seleccionadas)]
+            if 'Marca' in df_i_anio_completo.columns:
+                df_i_anio_completo = df_i_anio_completo[df_i_anio_completo['Marca'].isin(marcas_seleccionadas)]
+
+        meses_eje_x = []
+        nps_marca_y = []
+        nps_interna_y = []
+        
+        # Recorremos los meses del 1 al 12 para calcular los resultados
+        for m_num in sorted(df_m_anio_completo['Mes_Num'].unique()):
+            df_mes_m = df_m_anio_completo[df_m_anio_completo['Mes_Num'] == m_num]
+            df_mes_i = df_i_anio_completo[df_i_anio_completo['Mes_Num'] == m_num]
+            
+            # Calculamos el NPS correspondiente a ese mes
+            score_m = calcular_metricas_nps(df_mes_m, "Q2 - Recomendación - taller")[0] if not df_mes_m.empty else None
+            score_i = calcular_metricas_nps(df_mes_i, "1-NPS")[0] if not df_mes_i.empty else None
+            
+            if score_m is not None or score_i is not None:
+                meses_eje_x.append(MESES_ES[m_num])
+                nps_marca_y.append(score_m if score_m is not None else 0.0)
+                nps_interna_y.append(score_i if score_i is not None else 0.0)
+        
+        if meses_eje_x:
+            fig_tendencia = go.Figure()
+            
+            # Barra Vertical - Marca
+            fig_tendencia.add_trace(go.Bar(
+                x=meses_eje_x, y=nps_marca_y,
+                name="NPS Oficial Marca",
+                marker_color="#2563EB",
+                text=[f"{v}%" for v in nps_marca_y],
+                textposition='auto'
+            ))
+            
+            # Barra Vertical - Interna
+            fig_tendencia.add_trace(go.Bar(
+                x=meses_eje_x, y=nps_interna_y,
+                name="NPS Encuesta Interna",
+                marker_color="#10B981",
+                text=[f"{v}%" for v in nps_interna_y],
+                textposition='auto'
+            ))
+            
+            # Línea de Objetivo del 95%
+            fig_tendencia.add_trace(go.Scatter(
+                x=meses_eje_x, y=[95] * len(meses_eje_x),
+                mode='lines',
+                name='Objetivo Calidad (95%)',
+                line=dict(color='#EF4444', width=3, dash='dash'),
+                hoverinfo='skip'
+            ))
+            
+            fig_tendencia.update_layout(
+                barmode='group',
+                xaxis=dict(title="Meses"),
+                yaxis=dict(title="NPS (%)", range=[0, 105]),
+                height=400,
+                margin=dict(l=20, r=20, t=30, b=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)'
+            )
+            
+            st.plotly_chart(fig_tendencia, use_container_width=True)
+        else:
+            st.info("No se registran datos suficientes en el año seleccionado para calcular la tendencia.")
+            
+    st.markdown("<br>", unsafe_allow_html=True)
+    # ==============================================================================
+
+    st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(meses_sel_t1)}</div>", unsafe_allow_html=True)
+    
+    col_izq, col_der = st.columns(2)
     st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(meses_sel_t1)}</div>", unsafe_allow_html=True)
     
     col_izq, col_der = st.columns(2)
