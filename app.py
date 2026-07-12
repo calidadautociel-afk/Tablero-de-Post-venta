@@ -1218,23 +1218,31 @@ with tab_reclamos:
                 all_cats = set()
                 for counts in c_per_a.values(): all_cats.update(counts.index)
                 l_cats = sorted(list(all_cats))
-                a_cats = []
                 
                 fig_ba = go.Figure()
                 for cat in l_cats:
                     x_v, cd_p = [c_per_a[a].get(cat, 0) for a in s_areas], [a_stats[a]['pct'] for a in s_areas]
                     if sum(x_v) > 0:
-                        a_cats.append(cat)
-                        fig_ba.add_trace(go.Bar(y=s_areas, x=x_v, name=str(cat), orientation='h', text=[f"{v}" if v>0 else "" for v in x_v], textposition='inside', customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>"))
+                        fig_ba.add_trace(go.Bar(
+                            y=s_areas, x=x_v, name=str(cat), orientation='h', 
+                            text=[f"{v}" if v>0 else "" for v in x_v], textposition='inside', 
+                            customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>"
+                        ))
                 fig_ba.update_layout(barmode='stack', height=400 if len(s_areas)>3 else 280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.info("💡 Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
+                
                 try:
                     ev = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
-                    if ev and 'selection' in ev and ev['selection'].get('points'):
-                        pto = ev['selection']['points'][0]
-                        f_area, c_idx = pto.get('y'), pto.get('curveNumber')
-                        if c_idx is not None and c_idx < len(a_cats): f_cat = a_cats[c_idx]
-                except TypeError: st.plotly_chart(fig_ba, use_container_width=True)
+                    if ev and isinstance(ev, dict) and 'selection' in ev:
+                        puntos = ev['selection'].get('points', [])
+                        if puntos:
+                            pto = puntos[0]
+                            f_area = pto.get('y')
+                            c_idx = pto.get('curveNumber')
+                            if c_idx is not None and c_idx < len(fig_ba.data):
+                                f_cat = fig_ba.data[c_idx].name
+                except TypeError: 
+                    st.plotly_chart(fig_ba, use_container_width=True)
                 
             st.markdown("---")
             st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
@@ -1244,9 +1252,18 @@ with tab_reclamos:
             
             if cols_enc:
                 col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
-                df_t = df_rec_filtrado[df_rec_filtrado[f_area]==f_cat] if f_area and f_cat and f_area in df_rec_filtrado.columns else df_rec_filtrado
+                
+                if f_area and f_cat and f_area in df_rec_filtrado.columns:
+                    # Filtro "bulletproof" limpiando espacios en ambos lados de la igualdad
+                    df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
+                else:
+                    df_t = df_rec_filtrado
+                    
                 df_t = df_t[cols_enc]
                 if col_cc: df_t = df_t.dropna(subset=[col_cc])
-                if len(df_t) > 0: st.dataframe(df_t, use_container_width=True, hide_index=True)
-                else: st.info("No hay detalles registrados para este cruce.")
+                
+                if len(df_t) > 0: 
+                    st.dataframe(df_t, use_container_width=True, hide_index=True)
+                else: 
+                    st.info("No hay detalles registrados para este cruce.")
     else: st.error("Columna 'Fecha Cierre' no encontrada.")
