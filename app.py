@@ -889,16 +889,35 @@ with tab_telemarketer:
         line_data_tele = []
         for m_num in range(1, 13):
             df_mes = df_tele_filtrado[df_tele_filtrado['Mes_Cierre_Num'] == m_num]
-            if 'Tipo Contacto' in df_mes.columns:
+            
+            if 'Tipo Contacto' in df_mes.columns and 'Contactado' in df_mes.columns:
+                
+                # 1. Numeradores (Filtro por Tipo de Contacto)
                 s_c = df_mes['Tipo Contacto'].fillna('Vacío').astype(str).str.strip()
-                c_wa, c_tel, c_vac = len(s_c[s_c=='Whatsapp']), len(s_c[s_c=='Telefonico']), len(s_c[s_c=='Vacío'])
-                tot = c_wa + c_tel + c_vac
-                p_virt = round((c_wa/(c_wa+c_vac)*100), 1) if (c_wa+c_vac)>0 else None
-                p_hum = round((c_tel/(c_tel+c_vac)*100), 1) if (c_tel+c_vac)>0 else None
-                p_glob = round(((c_wa+c_tel)/tot*100), 1) if tot>0 else None
+                c_wa = len(s_c[s_c == 'Whatsapp'])
+                c_tel = len(s_c[s_c == 'Telefonico'])
+                c_vac = len(s_c[s_c == 'Vacío']) # Se conserva para los tooltips (customdata) del gráfico
+                
+                # 2. Denominador Común (Filtro por Estado de Contacto)
+                estados_validos = ['Cerrado sin respuesta', 'Contactado', 'Buzón de voz', 'No Contactado']
+                denominador_comun = df_mes['Contactado'].astype(str).str.strip().isin(estados_validos).sum()
+                
+                # 3. Cálculos de Efectividad (Los 3 comparten el mismo denominador)
+                p_virt = round((c_wa / denominador_comun * 100), 1) if denominador_comun > 0 else None
+                p_hum = round((c_tel / denominador_comun * 100), 1) if denominador_comun > 0 else None
+                p_glob = round(((c_wa + c_tel) / denominador_comun * 100), 1) if denominador_comun > 0 else None
+                
                 if m_num in df_tele_filtrado['Mes_Cierre_Num'].unique():
-                    line_data_tele.append({"Mes_Nombre": MESES_ES[m_num], "Mes_Num": m_num, "Global": p_glob, "Virtual": p_virt, "Telemarketer": p_hum, "Cant_WA": c_wa, "Cant_Tel": c_tel, "Cant_Vac": c_vac})
-        
+                    line_data_tele.append({
+                        "Mes_Nombre": MESES_ES[m_num], 
+                        "Mes_Num": m_num, 
+                        "Global": p_glob, 
+                        "Virtual": p_virt, 
+                        "Telemarketer": p_hum, 
+                        "Cant_WA": c_wa, 
+                        "Cant_Tel": c_tel, 
+                        "Cant_Vac": c_vac
+                    })
         if line_data_tele:
             df_l = pd.DataFrame(line_data_tele).sort_values("Mes_Num")
             fig_tele = go.Figure()
