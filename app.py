@@ -5,6 +5,7 @@ import math
 import datetime
 from fpdf import FPDF
 import io
+
 # Configuración de la página en modo ancho (Wide)
 st.set_page_config(
     page_title="Indicadores y Seguimiento de Calidad Posventa - Autociel",
@@ -124,19 +125,15 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     marcas_disp = sorted(df_m_raw['Marca'].dropna().unique()) if 'Marca' in df_m_raw.columns else []
 
     # --- LÓGICA DE VALORES POR DEFECTO ---
-    # Año Actual (Si no hay datos del año actual en la DB, toma el más reciente)
     default_anio = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
     
-    # Mes Actual (Si estamos en Julio y hay datos de Julio, lo setea. Si no, busca el último mes con datos del año seleccionado)
     meses_existentes = df_m_raw[df_m_raw['Año'] == default_anio[0]]['Mes'].unique() if default_anio else []
     default_mes = [mes_actual_nombre] if mes_actual_nombre in meses_existentes else (meses_existentes[:1].tolist() if len(meses_existentes)>0 else [mes_actual_nombre])
     
-    # Marca PEUGEOT por defecto (Ignorando mayúsculas/minúsculas para evitar errores)
     default_marca = [m for m in marcas_disp if "peugeot" in str(m).lower()]
     if not default_marca and marcas_disp:
-        default_marca = marcas_disp[:1] # Si no existe Peugeot en la DB, setea la primera marca que encuentre
+        default_marca = marcas_disp[:1]
 
-    # Inicializar Session State para esta pestaña específica (solo se ejecuta la primera vez que carga)
     if f'{key_prefix}_anio' not in st.session_state:
         st.session_state[f'{key_prefix}_anio'] = default_anio
     if f'{key_prefix}_mes' not in st.session_state:
@@ -155,7 +152,6 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
         with c3:
             sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
 
-    # Aplicación de los filtros a los DataFrames
     df_m_filt = df_m_raw[df_m_raw['Año'].isin(sel_años) & df_m_raw['Mes'].isin(sel_meses)]
     df_i_filt = df_i_raw[df_i_raw['Año'].isin(sel_años) & df_i_raw['Mes'].isin(sel_meses)]
 
@@ -164,18 +160,17 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
         if 'Marca' in df_i_filt.columns: df_i_filt = df_i_filt[df_i_filt['Marca'].isin(sel_marcas)]
 
     return df_m_filt, df_i_filt, sel_meses
-# --- CÁLCULOS MÉTRICAS (ACTUALIZADO PARA LEER TEXTOS DE JULIO) ---
+
+# --- CÁLCULOS MÉTRICAS ---
 def calcular_metricas_nps(df, columna):
     if columna not in df.columns: return 0.0, 0, 0, 0
     
-    # Diccionario de traducción para mantener compatibilidad con Rankings y Prima de Calidad
     mapeo_textos = {
         'muy satisfecho': 10, 'satisfecho': 8, 'insatisfecho': 1, 'muy insatisfecho': 1,
         'sí': 10, 'si': 10, 'no': 1,
         'superó mis expectativas': 10, 'cumplió mis expectativas': 8, 'no cumplió mis expectativas': 1
     }
     
-    # Si la columna contiene texto (Julio en adelante), se traduce. Si son números (Ene-Jun), se mantienen.
     if df[columna].dtype == object:
         valores_procesados = df[columna].astype(str).str.strip().str.lower().map(mapeo_textos).fillna(pd.to_numeric(df[columna], errors='coerce'))
     else:
@@ -203,14 +198,27 @@ def calcular_promedio(df, columna):
     if len(valores) == 0: return 0.0
     return round(valores.mean() * 10, 1)
 
-# --- VELOCÍMETROS ---
+# --- VELOCÍMETROS (ACTUALIZADO AL FORMATO VENTAS) ---
 def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= (80 if is_promedio else 70) else '#EF4444')
     font_size = 20 if mini else 42
+    
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=score, 
         number={'suffix': "%", 'font': {'size': font_size, 'color': '#1E293B'}}, 
-        gauge={'axis': {'range': [0, 100], 'showticklabels': False}, 'bar': {'color': color_bar, 'thickness': 0.15}, 'bgcolor': "#F1F5F9", 'borderwidth': 0}
+        gauge={
+            'axis': {
+                'range': [0, 100], 
+                'showticklabels': False,
+                'tickvals': [0, 25, 50, 75, 100],
+                'tickwidth': 2,
+                'tickcolor': '#555555',
+                'ticklen': 5
+            }, 
+            'bar': {'color': color_bar, 'thickness': 0.25}, 
+            'bgcolor': "#E6E9EC", 
+            'borderwidth': 0
+        }
     ))
     height_chart = 130 if mini else 240
     margin_bottom = 0 if mini else 10
@@ -220,7 +228,7 @@ def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     )
     return fig
 
-# --- GRÁFICOS DE TORTA (ACTUALIZADO) ---
+# --- GRÁFICOS DE TORTA ---
 def crear_torta(df, columna, titulo):
     if columna not in df.columns or df[columna].dropna().empty:
         fig = go.Figure()
@@ -525,89 +533,106 @@ with tab_monitor:
     st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(meses_sel_t1)}</div>", unsafe_allow_html=True)
     
     col_izq, col_der = st.columns(2)
-    st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(meses_sel_t1)}</div>", unsafe_allow_html=True)
-    
-    col_izq, col_der = st.columns(2)
     
     # === LADO IZQUIERDO: MARCA ===
     with col_izq:
+        st.markdown("### 🏢 Datos de Origen: Encuestas de Marca")
         with st.container(border=True):
-            st.markdown("<h3 style='text-align:center; color:#2563EB; margin-top: 10px;'>🏢 ENCUESTA DE MARCA</h3>", unsafe_allow_html=True)
-            st.markdown("---")
-            col_q1, col_q2 = st.columns(2)
-            with col_q1:
+            cm_q1, cm_q2, cm_tot = st.columns([2.2, 2.2, 0.8])
+            
+            with cm_q1:
                 score_q1, p_q1, n_q1, d_q1 = calcular_metricas_nps(df_m1, "Q1 - Satisfacción general")
                 st.plotly_chart(crear_velocimetro(score_q1, "Q1 - SATISFACCIÓN (NPS)"), use_container_width=True)
                 sub_c1, sub_c2, sub_c3 = st.columns(3)
-                with sub_c1: st.button(f"😄 {p_q1}", key="btn_m_p1", on_click=set_filtro_marca, args=('Promotor',))
-                with sub_c2: st.button(f"😐 {n_q1}", key="btn_m_n1", on_click=set_filtro_marca, args=('Neutro',))
-                with sub_c3: st.button(f"😠 {d_q1}", key="btn_m_d1", on_click=set_filtro_marca, args=('Detractor',))
+                with sub_c1: st.button(f"🟢 {p_q1} Prom", key="btn_m_p1", on_click=set_filtro_marca, args=('Promotor',))
+                with sub_c2: st.button(f"🟡 {n_q1} Neu", key="btn_m_n1", on_click=set_filtro_marca, args=('Neutro',))
+                with sub_c3: st.button(f"🔴 {d_q1} Det", key="btn_m_d1", on_click=set_filtro_marca, args=('Detractor',))
 
-            with col_q2:
+            with cm_q2:
                 score_q2, p_q2, n_q2, d_q2 = calcular_metricas_nps(df_m1, "Q2 - Recomendación - taller")
                 st.plotly_chart(crear_velocimetro(score_q2, "Q2 - RECOMENDACIÓN (NPS)"), use_container_width=True)
                 sub_c4, sub_c5, sub_c6 = st.columns(3)
-                with sub_c4: st.button(f"😄 {p_q2}", key="btn_m_p2", on_click=set_filtro_marca, args=('Promotor',))
-                with sub_c5: st.button(f"😐 {n_q2}", key="btn_m_n2", on_click=set_filtro_marca, args=('Neutro',))
-                with sub_c6: st.button(f"😠 {d_q2}", key="btn_m_d2", on_click=set_filtro_marca, args=('Detractor',))
+                with sub_c4: st.button(f"🟢 {p_q2} Prom", key="btn_m_p2", on_click=set_filtro_marca, args=('Promotor',))
+                with sub_c5: st.button(f"🟡 {n_q2} Neu", key="btn_m_n2", on_click=set_filtro_marca, args=('Neutro',))
+                with sub_c6: st.button(f"🔴 {d_q2} Det", key="btn_m_d2", on_click=set_filtro_marca, args=('Detractor',))
                 
-            st.markdown("<br>", unsafe_allow_html=True)
-            subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
-            
-            with subtab_agendamiento:
-                c1, c2 = st.columns(2)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q6 - Satisfacción instalaciones")[0], "Q6 - Instalaciones", mini=True), use_container_width=True)
-            
-            with subtab_asesor:
-                c1, c2, c3 = st.columns(3)
-                with c1: st.plotly_chart(crear_torta(df_m1, "Q7 - Cortesía y Amabilidad", "Q7 - Cortesía"), use_container_width=True)
-                with c2: st.plotly_chart(crear_torta(df_m1, "Q8 - Competencia Asesor de Servicio", "Q8 - Competencia"), use_container_width=True)
-                with c3: st.plotly_chart(crear_torta(df_m1, "Q11 - Explicación trabajo - costo", "Q11 - Expl. Trabajo"), use_container_width=True)
-                
-                if 'Q10 - Explicación presupuesto' in df_m1.columns and not df_m1['Q10 - Explicación presupuesto'].dropna().empty:
-                    with st.expander("📊 Ver KPI Histórico Descontinuado (Q10 - Presupuesto)"):
-                        st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto (Ene-Jun)", mini=True), use_container_width=True)
+            with cm_tot:
+                st.markdown("<br><br>", unsafe_allow_html=True)
+                t_m_q1 = p_q1 + n_q1 + d_q1
+                st.metric("Muestra", t_m_q1)
+                st.button("🔄 Todos", key="btn_clear_m", on_click=set_filtro_marca, args=('Todos',))
 
-            with subtab_taller:
-                c1, c2, c3 = st.columns(3)
-                with c1: st.plotly_chart(crear_torta(df_m1, "Q12 - Calidad del trabajo", "Q12 - Calidad"), use_container_width=True)
-                with c2: st.plotly_chart(crear_torta(df_m1, col_q13, "Q13 - FIR"), use_container_width=True)
-                with c3: st.plotly_chart(crear_torta(df_m1, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"**Segmentación actual Marca:** `{st.session_state.filtro_comentarios_marca}`")
+        
+        subtab_agendamiento, subtab_asesor, subtab_taller, subtab_contacto = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+        
+        with subtab_agendamiento:
+            c1, c2 = st.columns(2)
+            with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q5 - Facilidad de agendamiento")[0], "Q5 - Agendamiento", mini=True), use_container_width=True)
+            with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q6 - Satisfacción instalaciones")[0], "Q6 - Instalaciones", mini=True), use_container_width=True)
+        
+        with subtab_asesor:
+            c1, c2, c3 = st.columns(3)
+            with c1: st.plotly_chart(crear_torta(df_m1, "Q7 - Cortesía y Amabilidad", "Q7 - Cortesía"), use_container_width=True)
+            with c2: st.plotly_chart(crear_torta(df_m1, "Q8 - Competencia Asesor de Servicio", "Q8 - Competencia"), use_container_width=True)
+            with c3: st.plotly_chart(crear_torta(df_m1, "Q11 - Explicación trabajo - costo", "Q11 - Expl. Trabajo"), use_container_width=True)
             
-            with subtab_contacto:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
+            if 'Q10 - Explicación presupuesto' in df_m1.columns and not df_m1['Q10 - Explicación presupuesto'].dropna().empty:
+                with st.expander("📊 Ver KPI Histórico Descontinuado (Q10 - Presupuesto)"):
+                    st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q10 - Explicación presupuesto")[0], "Q10 - Presupuesto (Ene-Jun)", mini=True), use_container_width=True)
+
+        with subtab_taller:
+            c1, c2, c3 = st.columns(3)
+            with c1: st.plotly_chart(crear_torta(df_m1, "Q12 - Calidad del trabajo", "Q12 - Calidad"), use_container_width=True)
+            with c2: st.plotly_chart(crear_torta(df_m1, col_q13, "Q13 - FIR"), use_container_width=True)
+            with c3: st.plotly_chart(crear_torta(df_m1, "Q15 - Entrega según momento acordado", "Q15 - Entrega"), use_container_width=True)
+        
+        with subtab_contacto:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
 
     # === LADO DERECHO: INTERNA ===
     with col_der:
+        st.markdown("### 🎯 Datos de Origen: Encuestas Internas")
         with st.container(border=True):
-            st.markdown("<h3 style='text-align:center; color:#10B981; margin-top: 10px;'>🎯 ENCUESTA INTERNA</h3>", unsafe_allow_html=True)
-            st.markdown("---")
-            col_i1, col_i2 = st.columns(2)
-            with col_i1:
+            ci_q1, ci_q2, ci_tot = st.columns([2.2, 2.2, 0.8])
+            
+            with ci_q1:
                 score_i1 = calcular_promedio(df_i1, "Promedio")
                 st.plotly_chart(crear_velocimetro(score_i1, "SATISFACCIÓN (Promedio)", is_promedio=True), use_container_width=True)
                 
-            with col_i2:
+            with ci_q2:
                 score_i2, p_i2, n_i2, d_i2 = calcular_metricas_nps(df_i1, "1-NPS")
                 st.plotly_chart(crear_velocimetro(score_i2, "RECOMENDACIÓN (NPS)"), use_container_width=True)
                 sub_i4, sub_i5, sub_i6 = st.columns(3)
-                with sub_i4: st.button(f"😄 {p_i2}", key="btn_i_p2", on_click=set_filtro_int, args=('Promotor',))
-                with sub_i5: st.button(f"😐 {n_i2}", key="btn_i_n2", on_click=set_filtro_int, args=('Neutro',))
-                with sub_i6: st.button(f"😠 {d_i2}", key="btn_i_d2", on_click=set_filtro_int, args=('Detractor',))
+                with sub_i4: st.button(f"🟢 {p_i2} Prom", key="btn_i_p2", on_click=set_filtro_int, args=('Promotor',))
+                with sub_i5: st.button(f"🟡 {n_i2} Neu", key="btn_i_n2", on_click=set_filtro_int, args=('Neutro',))
+                with sub_i6: st.button(f"🔴 {d_i2} Det", key="btn_i_d2", on_click=set_filtro_int, args=('Detractor',))
                 
-            st.markdown("<br>", unsafe_allow_html=True)
-            subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
-            with subtab_agend_int:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
-            with subtab_asesor_int:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "4-Atención de necesidades")[0], "4-Atención necesidades", mini=True), use_container_width=True)
-            with subtab_taller_int:
-                c1, c2 = st.columns(2)
-                with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "6-Calidad de trabajo")[0], "6-Calidad trabajo", mini=True), use_container_width=True)
-                with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "7-Limpieza del vehículo")[0], "7-Limpieza", mini=True), use_container_width=True)
-            with subtab_contacto_int:
-                st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
+            with ci_tot:
+                st.markdown("<br><br>", unsafe_allow_html=True)
+                t_i_q2 = p_i2 + n_i2 + d_i2
+                st.metric("Muestra", t_i_q2)
+                st.button("🔄 Todos", key="btn_clear_i", on_click=set_filtro_int, args=('Todos',))
+                
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"**Segmentación actual Interna:** `{st.session_state.filtro_comentarios_int}`")
+        
+        subtab_agend_int, subtab_asesor_int, subtab_taller_int, subtab_contacto_int = st.tabs(["📅 Agend.", "👔 Asesor", "⚙️ Taller", "📞 Cont. "])
+        
+        with subtab_agend_int:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "2-Obtener turno")[0], "2-Obtener turno", mini=True), use_container_width=True)
+        
+        with subtab_asesor_int:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "4-Atención de necesidades")[0], "4-Atención necesidades", mini=True), use_container_width=True)
+        
+        with subtab_taller_int:
+            c1, c2 = st.columns(2)
+            with c1: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "6-Calidad de trabajo")[0], "6-Calidad trabajo", mini=True), use_container_width=True)
+            with c2: st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "7-Limpieza del vehículo")[0], "7-Limpieza", mini=True), use_container_width=True)
+        
+        with subtab_contacto_int:
+            st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
 
     # === TABLA GLOBAL DE COMENTARIOS DOBLE ===
     st.markdown("---")
@@ -859,7 +884,7 @@ with tab_quejas:
         else: st.info("Columnas de análisis no encontradas.")
 
 # ------------------------------------------------------------------------------
-# 6. PESTAÑA: TELEMARKETER (INTACTO CON SUS PROPIOS FILTROS)
+# 6. PESTAÑA: TELEMARKETER
 # ------------------------------------------------------------------------------
 with tab_telemarketer:
     st.markdown("### 📞 Control y Efectividad de Canales (Telemarketing)")
@@ -946,7 +971,7 @@ with tab_telemarketer:
     else: st.error("Columna 'Fecha Cierre' no encontrada.")
 
 # ------------------------------------------------------------------------------
-# 7. PESTAÑA: PRIMA DE CALIDAD (INTACTO)
+# 7. PESTAÑA: PRIMA DE CALIDAD
 # ------------------------------------------------------------------------------
 with tab_prima:
     st.markdown("### 📊 Tablero de Auditoría y Liquidación: Prima de Calidad Postventa")
@@ -1177,7 +1202,7 @@ with tab_prima:
                 st.plotly_chart(fig_ec, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# 8. PESTAÑA: ANÁLISIS DE RECLAMOS (INTACTO)
+# 8. PESTAÑA: ANÁLISIS DE RECLAMOS
 # ------------------------------------------------------------------------------
 with tab_reclamos:
     st.markdown("### 📋 Análisis de Reclamos")
@@ -1254,7 +1279,6 @@ with tab_reclamos:
                     event = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
                     puntos = []
                     
-                    # Extraer puntos según cómo Streamlit nos devuelve el evento
                     if hasattr(event, "selection") and hasattr(event.selection, "points"):
                         puntos = event.selection.points
                     elif isinstance(event, dict) and "selection" in event:
@@ -1262,10 +1286,8 @@ with tab_reclamos:
                         
                     if puntos:
                         pto = puntos[0]
-                        # Extraemos Y (Area)
                         f_area = pto.get("y") if isinstance(pto, dict) else getattr(pto, "y", None)
                         
-                        # Extraemos curve_number (Falla). ¡Aquí estaba el error! Streamlit usa guion bajo.
                         c_idx = pto.get("curve_number") if isinstance(pto, dict) else getattr(pto, "curve_number", None)
                         if c_idx is None and isinstance(pto, dict): c_idx = pto.get("curveNumber")
                         if c_idx is None: c_idx = getattr(pto, "curveNumber", None)
@@ -1285,7 +1307,6 @@ with tab_reclamos:
                 col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
                 
                 if f_area and f_cat and f_area in df_rec_filtrado.columns:
-                    # Filtro exacto limpiando espacios invisibles de las celdas
                     df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
                 else:
                     df_t = df_rec_filtrado
