@@ -999,12 +999,21 @@ with tab_prima:
             
             es_2025_post = (anio_prima_sel == 2025 and m_num >= 5)
             es_2026_post = (anio_prima_sel == 2026 and m_num >= 4)
+            es_nuevo_esquema = (anio_prima_sel >= 2026 and m_num >= 7) # NUEVA REGLA DESDE JULIO
+            
             m_l1, m_l2, m_l5 = (80.5 if es_2025_post else 77.0), (88.0 if es_2025_post else 86.3), (8 if es_2025_post else 10)
             
             if len(df_mes_marca_filtro) == 0:
                 monto_puro_liquidado[m_num] = 0
-                max_teorico_acumulado[m_num] = (630000 if es_2026_post else (420000 if es_2025_post else 540000)) * personas_declaradas
-                line_data_prima.append({"Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False, "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False, "V_D1": 0, "V_D2": 0, "V_D3": 0, "V_D4": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0, "Es_2025": es_2025_post, "Labels": ["🔹 Driver 1", "🔹 Driver 2", "🔹 Driver 3", "🔹 Driver 4"]})
+                
+                # Ajuste del máximo teórico para meses vacíos
+                if es_nuevo_esquema: max_t = 800000
+                else: max_t = 630000 if es_2026_post else (420000 if es_2025_post else 540000)
+                
+                max_teorico_acumulado[m_num] = max_t * personas_declaradas
+                lbls_zero = ["🔹 Recomendación (Q2)", "🔹 Q12 Cal. Trab. (Inactivo)", "🔹 Q7 Cortesía (Inactivo)", "🔹 Q19 Cont. (Inactivo)"] if es_nuevo_esquema else ["🔹 Recomendación (Q2)", "🔹 Driver 2", "🔹 Driver 3", "🔹 Driver 4"]
+                
+                line_data_prima.append({"Mes_Num": m_num, "Mes_Nombre": MESES_ES[m_num], "L1_Val": "-", "L1_OK": False, "L2_Val": "-", "L2_OK": False, "L3_Val": "-", "L3_OK": False, "L5_Val": "0", "L5_OK": False, "V_D1": 0, "V_D2": 0, "V_D3": 0, "V_D4": 0, "Suma_D_M": 0, "Pers": personas_declaradas, "Liq_S_M": 0, "Es_2025": es_2025_post, "Labels": lbls_zero})
                 continue
                 
             df_6mm = df_anio_marca_filtro[(df_anio_marca_filtro['Mes_Num'] > (m_num - 6)) & (df_anio_marca_filtro['Mes_Num'] <= m_num)]
@@ -1022,31 +1031,24 @@ with tab_prima:
             # 3. Mail Válido
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                # 1. Normalizar columnas: BUSCAR SÍ O SÍ "FECHA DE IMPORTACIÓN"
                 col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'importaci' in c.lower()), None)
                 col_estado = next((c for c in df_email_llave_raw.columns if 'estado de limpieza' in c.lower()), None)
                 col_rechazo = next((c for c in df_email_llave_raw.columns if 'razón de rechazo' in c.lower() or 'razon de rechazo' in c.lower()), None)
                 col_mar = next((c for c in df_email_llave_raw.columns if 'marca' in c.lower()), None)
 
                 if col_fecha_llave and col_estado:
-                    # Convertir a datetime para poder filtrar
                     df_email_llave_raw['Fecha_Temp'] = pd.to_datetime(df_email_llave_raw[col_fecha_llave], dayfirst=True, errors='coerce')
-                    
-                    # Filtrar por Año y Mes del bucle
                     mascara_mes_base = (df_email_llave_raw['Fecha_Temp'].dt.year == anio_prima_sel) & (df_email_llave_raw['Fecha_Temp'].dt.month == m_num)
                     df_rm = df_email_llave_raw[mascara_mes_base].copy()
                     
-                    # Filtrar por Marca si está seleccionado
                     if marcas_prima_sel and col_mar:
                         marcas_upper = [m.upper() for m in marcas_prima_sel]
                         df_rm = df_rm[df_rm[col_mar].astype(str).str.strip().str.upper().isin(marcas_upper)]
 
                     if not df_rm.empty:
-                        # 2. Conteo de Correos Válidos
                         estado_serie = df_rm[col_estado].astype(str).str.strip().str.upper().str.replace('Á', 'A')
                         cant_validos = (estado_serie == "VALIDO").sum()
 
-                        # 3. Conteo de Rechazos Penalizables (Lista estricta de Posventa)
                         cant_rechazos = 0
                         if col_rechazo:
                             razones_validas_penalizables = [
@@ -1064,7 +1066,6 @@ with tab_prima:
                             mascara_rechazos = (estado_serie.str.contains("NO VALID", na=False)) & (razon_serie.isin(razones_validas_penalizables))
                             cant_rechazos = mascara_rechazos.sum()
 
-                        # 4. Cálculo de la Tasa
                         total_divisor = cant_validos + cant_rechazos
                         if total_divisor > 0:
                             pct_mail_val = round((cant_validos / total_divisor) * 100, 1)
@@ -1074,7 +1075,18 @@ with tab_prima:
             llaves_ok = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
             
             m1, m2, m3, m4 = 0, 0, 0, 0
-            if es_2025_post:
+            
+            # --- EVALUACIÓN DE DRIVERS ---
+            if es_nuevo_esquema:
+                # NUEVA LÓGICA (A partir de Julio 2026)
+                if score_nps_mes >= 93.5: m1 = 800000
+                elif score_nps_mes >= 88.3: m1 = 600000
+                
+                max_u = 800000
+                lbls = ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad Trabajo (Inactivo)", "🔹 Q7 Cortesía Asesor (Inactivo)", "🔹 Q19 Sat. Contacto (Inactivo)"]
+            
+            elif es_2025_post:
+                # LÓGICA HISTÓRICA 2025
                 if score_nps_mes>=93.5: m1=210000
                 elif score_nps_mes>=89.8: m1=160000
                 sq11 = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")[0]
@@ -1087,8 +1099,10 @@ with tab_prima:
                 if sq7>=95.5: m4=52500
                 elif sq7>=93.3: m4=40000
                 max_u, lbls = 420000, ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab.", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía Asesor"]
+            
             else:
                 if not es_2026_post:
+                    # LÓGICA HISTÓRICA ENE-MAR 2026
                     if score_nps_mes>=93.5: m1=270000
                     elif score_nps_mes>=88.3: m1=200000
                     sq12 = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")[0]
@@ -1102,6 +1116,7 @@ with tab_prima:
                     elif sq19>=91.8: m4=40000
                     max_u, lbls = 540000, ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad Trabajo", "🔹 Q7 Cortesía Asesor", "🔹 Q19 Satisfacción Contacto"]
                 else:
+                    # LÓGICA HISTÓRICA ABR-JUN 2026
                     if score_nps_mes>=93.5: m1=310000
                     elif score_nps_mes>=88.3: m1=230000
                     sq12 = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")[0]
@@ -1147,67 +1162,86 @@ with tab_prima:
             f_calc = d["Liq_S_M"] + m_bonus
             lista_render.append({**d, "Bonus_Display": s_bonus, "Color_B_Style": c_bonus, "Pct_Cumpl": round((d["Liq_S_M"]/max_teorico_acumulado[m]*100),1) if max_teorico_acumulado[m]>0 else 0.0, "Final_M": f_calc, "Perdida_M": max(0, max_teorico_acumulado[m]-f_calc)})
 
+        # ==========================================================
+        # RENDERIZADO HTML (DIVIDIDO PARA EL DESPLEGABLE)
+        # ==========================================================
         if lista_render:
-            html = "<table style='width:100%; border-collapse: collapse; text-align: center; font-size: 13px;'><thead><tr style='background-color: #1E293B; color: white;'><th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>Mes</th>"
-            for d in lista_render: html += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
-            html += "</tr></thead><tbody>"
+            # Estilo maestro para fijar el ancho y evitar desalineaciones
+            t_style = "width:100%; table-layout:fixed; border-collapse: collapse; text-align: center; font-size: 13px;"
             
-            html += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🔑 UMBRALES (POSTVENTA)</td></tr>"
+            # --- PARTE 1: TABLA PRINCIPAL Y RECOMENDACIÓN ---
+            html_top = f"<table style='{t_style}'><thead><tr style='background-color: #1E293B; color: white;'><th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>Mes</th>"
+            for d in lista_render: html_top += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
+            html_top += "</tr></thead><tbody>"
+            
+            html_top += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🔑 UMBRALES (POSTVENTA)</td></tr>"
             lbl_l1 = "📞 Contacto Posterior 6MM (Meta &ge; 80.5%)" if es_filtro_2025 else "📞 Contacto Posterior 6MM (Meta &ge; 77%)"
-            html += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l1}</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L1_OK'] else ('#F1F5F9' if d['L1_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L1_Val']}</td>"
-            html += "</tr>"
+            html_top += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; overflow:hidden;'>{lbl_l1}</td>"
+            for d in lista_render: html_top += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L1_OK'] else ('#F1F5F9' if d['L1_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L1_Val']}</td>"
+            html_top += "</tr>"
             
             lbl_l2 = "🏢 NPS Mínimo Taller (Meta &ge; 88%)" if es_filtro_2025 else "🏢 NPS Mínimo Global (Meta &ge; 86.3%)"
-            html += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l2}</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L2_OK'] else ('#F1F5F9' if d['L2_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L2_Val']}</td>"
-            html += "</tr>"
+            html_top += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; overflow:hidden;'>{lbl_l2}</td>"
+            for d in lista_render: html_top += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L2_OK'] else ('#F1F5F9' if d['L2_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L2_Val']}</td>"
+            html_top += "</tr>"
             
-            html += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>✉️ Tasa Mail Válido (&ge; 80%)</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L3_OK'] else ('#F1F5F9' if d['L3_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L3_Val']}</td>"
-            html += "</tr>"
+            html_top += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; overflow:hidden;'>✉️ Tasa Mail Válido (&ge; 80%)</td>"
+            for d in lista_render: html_top += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L3_OK'] else ('#F1F5F9' if d['L3_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L3_Val']}</td>"
+            html_top += "</tr>"
             
             lbl_l5 = "📊 Muestra Mínima (Meta &ge; 8 Rps.)" if es_filtro_2025 else "📊 Muestra Mínima (Meta &ge; 10 Rps.)"
-            html += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>{lbl_l5}</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L5_OK'] else ('#F1F5F9' if d['L5_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L5_Val']}</td>"
-            html += "</tr>"
+            html_top += f"<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; overflow:hidden;'>{lbl_l5}</td>"
+            for d in lista_render: html_top += f"<td style='padding: 10px; border: 1px solid #E2E8F0; background-color: {'#D4EDDA' if d['L5_OK'] else ('#F1F5F9' if d['L5_Val']=='-' else '#F8D7DA')}; font-weight: bold;'>{d['L5_Val']}</td>"
+            html_top += "</tr>"
             
-            html += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🎯 INCENTIVOS COMERCIALES</td></tr>"
-            for i in range(4):
-                html += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left;'>{lista_render[0]['Labels'][i]}</td>"
-                for d in lista_render:
-                    val = d["V_D1"] if i==0 else (d["V_D2"] if i==1 else (d["V_D3"] if i==2 else d["V_D4"]))
-                    html += f"<td style='padding:10px; border:1px solid #E2E8F0;'>${val:,.0f}</td>".replace("$0", "$0")
-                html += "</tr>"
+            html_top += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🎯 INCENTIVOS COMERCIALES</td></tr>"
+            
+            # Fila estática de Recomendación (Siempre visible)
+            html_top += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left; overflow:hidden;'>{lista_render[0]['Labels'][0]}</td>"
+            for d in lista_render: html_top += f"<td style='padding:10px; border:1px solid #E2E8F0;'>${d['V_D1']:,.0f}</td>".replace("$0", "$0")
+            html_top += "</tr></tbody></table>"
+            
+            st.markdown(html_top, unsafe_allow_html=True)
+            
+            # --- PARTE 2: DESPLEGABLE DRIVERS DESCONTINUADOS ---
+            with st.expander("🔽 Ver Drivers Complementarios (Historial y Descontinuados)", expanded=False):
+                html_mid = f"<table style='{t_style}'><tbody>"
+                for i in range(1, 4):
+                    html_mid += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left; overflow:hidden; color:#64748B;'>{lista_render[0]['Labels'][i]}</td>"
+                    for d in lista_render:
+                        val = d["V_D2"] if i==1 else (d["V_D3"] if i==2 else d["V_D4"])
+                        html_mid += f"<td style='padding:10px; border:1px solid #E2E8F0; color:#64748B;'>${val:,.0f}</td>".replace("$0", "$0")
+                    html_mid += "</tr>"
+                html_mid += "</tbody></table>"
+                st.markdown(html_mid, unsafe_allow_html=True)
                 
-            html += "<tr style='background-color: #F8FAFC;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>💰 SUMA DRIVERS (Unitario)</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
-            html += "</tr>"
+            # --- PARTE 3: TOTALES INFERIORES ---
+            html_bot = f"<table style='{t_style}'><tbody>"
+            html_bot += "<tr style='background-color: #F8FAFC;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; overflow:hidden;'>💰 SUMA DRIVERS (Unitario)</td>"
+            for d in lista_render: html_bot += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
+            html_bot += "</tr>"
             
-            html += "<tr style='background-color: #F1F5F9; font-weight: bold;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>📊 Eficiencia del Mes</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{'#10B981' if d['Pct_Cumpl']>=90 else ('#F59E0B' if d['Pct_Cumpl']>=50 else '#EF4444')};'>{d['Pct_Cumpl']:.1f}%</td>"
-            html += "</tr>"
+            html_bot += "<tr style='background-color: #F1F5F9; font-weight: bold;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; overflow:hidden;'>📊 Eficiencia del Mes</td>"
+            for d in lista_render: html_bot += f"<td style='padding: 10px; border: 1px solid #E2E8F0; color:{'#10B981' if d['Pct_Cumpl']>=90 else ('#F59E0B' if d['Pct_Cumpl']>=50 else '#EF4444')};'>{d['Pct_Cumpl']:.1f}%</td>"
+            html_bot += "</tr>"
             
-            html += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>👥 Personal Declarado</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Pers']}</td>"
-            html += "</tr>"
+            html_bot += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; overflow:hidden;'>👥 Personal Declarado</td>"
+            for d in lista_render: html_bot += f"<td style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Pers']}</td>"
+            html_bot += "</tr>"
             
-            html += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold;'>📈 Liq. Total Sector</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
-            html += "</tr>"
+            html_bot += "<tr><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; overflow:hidden;'>📈 Liq. Total Sector</td>"
+            for d in lista_render: html_bot += f"<td style='padding: 10px; border: 1px solid #E2E8F0;'>${d['Liq_S_M']:,.0f}</td>".replace("$0", "$0")
+            html_bot += "</tr>"
             
-            html += "<tr style='background-color: #FDF2F8;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color: #9D174D;'>⭐ Bonus Trimestral (5%)</td>"
-            for d in lista_render: html += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
-            html += "</tr>"
+            html_bot += "<tr style='background-color: #FDF2F8;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color: #9D174D; overflow:hidden;'>⭐ Bonus Trimestral (5%)</td>"
+            for d in lista_render: html_bot += f"<td style='padding: 10px; border: 1px solid #E2E8F0; {d['Color_B_Style']}'>{d['Bonus_Display']}</td>"
+            html_bot += "</tr>"
             
-            html += "<tr style='background-color: #D1FAE5;'><td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46;'>💵 LIQUIDACIÓN FINAL</td>"
-            for d in lista_render: html += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
-            html += "</tr></tbody></table>"
+            html_bot += "<tr style='background-color: #D1FAE5;'><td style='padding: 12px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; color:#065F46; overflow:hidden;'>💵 LIQUIDACIÓN FINAL</td>"
+            for d in lista_render: html_bot += f"<td style='padding: 12px; border: 1px solid #E2E8F0; font-weight: bold; color:#047857;'>${d['Final_M']:,.0f}</td>".replace("$0", "$0")
+            html_bot += "</tr></tbody></table>"
             
-            st.markdown(html, unsafe_allow_html=True)
-            
-            st.markdown("---")
-            st.markdown("#### 💵 Control de Flujo de Caja")
+            st.markdown(html_bot, unsafe_allow_html=True)
             c_sel1, c_sel2 = st.columns(2)
             mes_default = MESES_ES.get((datetime.date.today() - datetime.timedelta(days=45)).month, "Enero")
             with c_sel1: a_caja = st.selectbox("Año:", options=anios_prima, key="sb_anio_caja")
