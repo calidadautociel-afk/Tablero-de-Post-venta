@@ -1020,11 +1020,10 @@ with tab_prima:
             ok_llave2 = (score_nps_mes >= m_l2)
             
             # 3. Mail Válido
-            # 3. Mail Válido
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                # 1. Normalizar columnas: Tomamos la PRIMERA columna como fecha base (índice 0)
-                col_fecha_llave = df_email_llave_raw.columns[0]
+                # 1. Normalizar columnas: BUSCAR SÍ O SÍ "FECHA DE IMPORTACIÓN"
+                col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'importaci' in c.lower()), None)
                 col_estado = next((c for c in df_email_llave_raw.columns if 'estado de limpieza' in c.lower()), None)
                 col_rechazo = next((c for c in df_email_llave_raw.columns if 'razón de rechazo' in c.lower() or 'razon de rechazo' in c.lower()), None)
                 col_mar = next((c for c in df_email_llave_raw.columns if 'marca' in c.lower()), None)
@@ -1047,7 +1046,7 @@ with tab_prima:
                         estado_serie = df_rm[col_estado].astype(str).str.strip().str.upper().str.replace('Á', 'A')
                         cant_validos = (estado_serie == "VALIDO").sum()
 
-                        # 3. Conteo de Rechazos Penalizables (Lista Posventa actualizada)
+                        # 3. Conteo de Rechazos Penalizables (Lista estricta de Posventa)
                         cant_rechazos = 0
                         if col_rechazo:
                             razones_validas_penalizables = [
