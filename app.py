@@ -1023,7 +1023,7 @@ with tab_prima:
             # 3. Mail Válido
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                # 1. Normalizar columnas (Forzamos a tomar la PRIMERA columna como fecha base)
+                # 1. Normalizar columnas: Tomamos la PRIMERA columna como fecha base (índice 0)
                 col_fecha_llave = df_email_llave_raw.columns[0]
                 col_estado = next((c for c in df_email_llave_raw.columns if 'estado de limpieza' in c.lower()), None)
                 col_rechazo = next((c for c in df_email_llave_raw.columns if 'razón de rechazo' in c.lower() or 'razon de rechazo' in c.lower()), None)
