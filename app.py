@@ -1242,10 +1242,31 @@ with tab_prima:
             html_bot += "</tr></tbody></table>"
             
             st.markdown(html_bot, unsafe_allow_html=True)
+            st.markdown("---")
+            st.markdown("#### 💵 Control de Flujo de Caja")
             c_sel1, c_sel2 = st.columns(2)
-            mes_default = MESES_ES.get((datetime.date.today() - datetime.timedelta(days=45)).month, "Enero")
+            
+            # --- NUEVA LÓGICA: AUTO-COMPLETAR MESES COBRADOS (+45 DÍAS) ---
+            meses_cobrados_default = []
+            hoy = datetime.date.today()
+            
+            for m_num in range(1, 13):
+                if m_num == 12:
+                    primer_dia_siguiente = datetime.date(anio_prima_sel + 1, 1, 1)
+                else:
+                    primer_dia_siguiente = datetime.date(anio_prima_sel, m_num + 1, 1)
+                    
+                fecha_cierre_mes = primer_dia_siguiente - datetime.timedelta(days=1)
+                fecha_cobro = fecha_cierre_mes + datetime.timedelta(days=45)
+                
+                if hoy >= fecha_cobro:
+                    mes_nombre = MESES_ES.get(m_num)
+                    if any(x['Mes_Nombre'] == mes_nombre and x['L1_Val'] != '-' for x in lista_render):
+                        meses_cobrados_default.append(mes_nombre)
+            # --------------------------------------------------------------
+
             with c_sel1: a_caja = st.selectbox("Año:", options=anios_prima, key="sb_anio_caja")
-            with c_sel2: m_caja = st.multiselect("Meses cobrados:", options=list(MESES_ES.values()), default=[mes_default] if mes_default in [x['Mes_Nombre'] for x in lista_render if x['L1_Val']!='-'] else [], key="ms_meses_caja")
+            with c_sel2: m_caja = st.multiselect("Meses cobrados:", options=list(MESES_ES.values()), default=meses_cobrados_default, key="ms_meses_caja")
             
             m_cob, m_pend, m_perd = 0.0, 0.0, 0.0
             x_m, y_alc, y_max, y_per = [], [], [], []
