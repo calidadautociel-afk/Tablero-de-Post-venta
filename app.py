@@ -1423,6 +1423,6 @@ with tab_prima:
                         st.dataframe(df_t, use_container_width=True, hide_index=True)
                     else: 
                         st.info("No hay detalles registrados para este cruce.")
-        else: 
+                else: 
             st.error("Columna 'Fecha Cierre' no encontrada.")
 
