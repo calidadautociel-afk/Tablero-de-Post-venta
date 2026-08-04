@@ -1021,9 +1021,8 @@ with tab_prima:
             
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                # 1. Normalizar las columnas necesarias de la nueva base de ROAR
-                # Aseguramos que la fecha existe para filtrar por año y mes
-                col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'fecha de invitaci' in c.lower()), None)
+                # 1. Normalizar las columnas (Buscamos la fecha base de facturación/reparación, NO la de invitación)
+                col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'facturaci' in c.lower() or 'reparaci' in c.lower() or ('fecha' in c.lower() and 'invitaci' not in c.lower() and 'recordatorio' not in c.lower())), df_email_llave_raw.columns[0])
                 col_estado = next((c for c in df_email_llave_raw.columns if 'estado de limpieza' in c.lower()), None)
                 col_rechazo = next((c for c in df_email_llave_raw.columns if 'razón de rechazo' in c.lower() or 'razon de rechazo' in c.lower()), None)
                 col_mar = next((c for c in df_email_llave_raw.columns if 'marca' in c.lower()), None)
