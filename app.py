@@ -1408,7 +1408,7 @@ with tab_prima:
                 cols_enc = [next((c for c in df_rec_filtrado.columns if str(c).strip().lower()==str(col).lower()), None) for col in cols_req]
                 cols_enc = [c for c in cols_enc if c]
                 
-                if cols_enc:
+            if cols_enc:
                     col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
                     
                     if f_area and f_cat and f_area in df_rec_filtrado.columns:
@@ -1423,6 +1423,6 @@ with tab_prima:
                         st.dataframe(df_t, use_container_width=True, hide_index=True)
                     else: 
                         st.info("No hay detalles registrados para este cruce.")
-                else: 
+            else: 
             st.error("Columna 'Fecha Cierre' no encontrada.")
 
