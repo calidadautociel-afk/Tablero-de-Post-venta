@@ -1019,10 +1019,11 @@ with tab_prima:
             score_nps_mes = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")[0]
             ok_llave2 = (score_nps_mes >= m_l2)
             
+            # 3. Mail Válido
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                # 1. Normalizar las columnas (Buscamos 'Fecha de Importación')
-                col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'importaci' in c.lower()), None)
+                # 1. Normalizar columnas: buscar 'Fecha de Importación'
+                col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'fecha de importación' in c.lower() or 'importacion' in c.lower()), None)
                 col_estado = next((c for c in df_email_llave_raw.columns if 'estado de limpieza' in c.lower()), None)
                 col_rechazo = next((c for c in df_email_llave_raw.columns if 'razón de rechazo' in c.lower() or 'razon de rechazo' in c.lower()), None)
                 col_mar = next((c for c in df_email_llave_raw.columns if 'marca' in c.lower()), None)
@@ -1045,7 +1046,7 @@ with tab_prima:
                         estado_serie = df_rm[col_estado].astype(str).str.strip().str.upper().str.replace('Á', 'A')
                         cant_validos = (estado_serie == "VALIDO").sum()
 
-                        # 3. Conteo de Rechazos Penalizables (Lista actualizada de Posventa)
+                        # 3. Conteo de Rechazos Penalizables (Lista Posventa)
                         cant_rechazos = 0
                         if col_rechazo:
                             razones_validas_penalizables = [
@@ -1068,6 +1069,7 @@ with tab_prima:
                         if total_divisor > 0:
                             pct_mail_val = round((cant_validos / total_divisor) * 100, 1)
                             ok_llave3, val_l3_display = (pct_mail_val >= 80.0), f"{pct_mail_val}%"
+
             ok_llave5 = (len(df_mes_marca_filtro) >= m_l5)
             llaves_ok = ok_llave1 and ok_llave2 and ok_llave3 and ok_llave5
             
