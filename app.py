@@ -1424,5 +1424,5 @@ with tab_prima:
                     else: 
                         st.info("No hay detalles registrados para este cruce.")
             else: 
-            st.error("Columna 'Fecha Cierre' no encontrada.")
+                st.error("Columna 'Fecha Cierre' no encontrada.")
 
