@@ -1292,7 +1292,7 @@ with tab_prima:
                 fig_ec.update_layout(hovermode='x unified', height=420, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_ec, use_container_width=True)
 
-        # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
         # 8. PESTAÑA: ANÁLISIS DE RECLAMOS
         # ------------------------------------------------------------------------------
         with tab_reclamos:
@@ -1425,3 +1425,4 @@ with tab_prima:
                         st.info("No hay detalles registrados para este cruce.")
         else: 
             st.error("Columna 'Fecha Cierre' no encontrada.")
+
