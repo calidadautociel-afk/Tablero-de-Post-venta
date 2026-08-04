@@ -50,7 +50,7 @@ st.markdown("""
 # URLs públicas de Google Sheets
 SHEET_URL_MARCA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=754740343"
 SHEET_URL_INTERNA = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1128023355"
-SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1942714178"
+SHEET_URL_EMAIL_LLAVE = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1727842086"
 SHEET_URL_RECLAMOS = "https://docs.google.com/spreadsheets/d/1kMzEHI4uuEWdIG7NfjgVkVVqOSw8ga9p_4-1i5ZN5wo/export?format=csv&gid=1460120243"
 
 # Mapeo de meses en español
@@ -1021,17 +1021,49 @@ with tab_prima:
             
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
-                col_t = next((c for c in df_email_llave_raw.columns if 'Email Utilizable' in c), None)
-                col_m = next((c for c in df_email_llave_raw.columns if c.lower()=='mes'), None)
-                col_mar = next((c for c in df_email_llave_raw.columns if c.lower()=='marca'), None)
-                if col_t and col_m:
-                    str_m = f"{MESES_SHORT[m_num]} {anio_prima_sel}".lower()
-                    df_rm = df_email_llave_raw[df_email_llave_raw[col_m].astype(str).str.strip().str.lower() == str_m]
-                    if marcas_prima_sel and col_mar: df_rm = df_rm[df_rm[col_mar].astype(str).str.strip().str.lower().isin([m.lower() for m in marcas_prima_sel])]
+                # 1. Normalizar las columnas necesarias de la nueva base de ROAR
+                # Aseguramos que la fecha existe para filtrar por año y mes
+                col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'fecha de invitaci' in c.lower()), None)
+                col_estado = next((c for c in df_email_llave_raw.columns if 'estado de limpieza' in c.lower()), None)
+                col_rechazo = next((c for c in df_email_llave_raw.columns if 'razón de rechazo' in c.lower() or 'razon de rechazo' in c.lower()), None)
+                col_mar = next((c for c in df_email_llave_raw.columns if 'marca' in c.lower()), None)
+
+                if col_fecha_llave and col_estado:
+                    # Convertir a datetime para poder filtrar
+                    df_email_llave_raw['Fecha_Temp'] = pd.to_datetime(df_email_llave_raw[col_fecha_llave], dayfirst=True, errors='coerce')
+                    
+                    # Filtrar por Año y Mes del bucle
+                    mascara_mes_base = (df_email_llave_raw['Fecha_Temp'].dt.year == anio_prima_sel) & (df_email_llave_raw['Fecha_Temp'].dt.month == m_num)
+                    df_rm = df_email_llave_raw[mascara_mes_base].copy()
+                    
+                    # Filtrar por Marca si está seleccionado
+                    if marcas_prima_sel and col_mar:
+                        marcas_upper = [m.upper() for m in marcas_prima_sel]
+                        df_rm = df_rm[df_rm[col_mar].astype(str).str.strip().str.upper().isin(marcas_upper)]
+
                     if not df_rm.empty:
-                        tasas = [float(str(v).replace('%','').replace(',','.')) for v in df_rm[col_t] if pd.notnull(pd.to_numeric(str(v).replace('%','').replace(',','.'), errors='coerce'))]
-                        if tasas:
-                            pct_mail_val = round(sum([t if t>1 else t*100 for t in tasas]) / len(tasas), 1)
+                        # 2. Conteo de Correos Válidos
+                        estado_serie = df_rm[col_estado].astype(str).str.strip().str.upper().str.replace('Á', 'A')
+                        cant_validos = (estado_serie == "VALIDO").sum()
+
+                        # 3. Conteo de Rechazos Penalizables
+                        cant_rechazos = 0
+                        if col_rechazo:
+                            razones_validas_penalizables = [
+                                "NoContactProvided",
+                                "No se proporciono ningun contacto valido",
+                                "Correo electrónico/teléfono ausente;Correo electrónico/teléfono Inválido",
+                                "Invalid Email",
+                                "Mandatory field missing - email; invalid email"
+                            ]
+                            razon_serie = df_rm[col_rechazo].astype(str).str.strip()
+                            mascara_rechazos = (estado_serie.str.contains("NO VALID", na=False)) & (razon_serie.isin(razones_validas_penalizables))
+                            cant_rechazos = mascara_rechazos.sum()
+
+                        # 4. Cálculo de la Tasa
+                        total_divisor = cant_validos + cant_rechazos
+                        if total_divisor > 0:
+                            pct_mail_val = round((cant_validos / total_divisor) * 100, 1)
                             ok_llave3, val_l3_display = (pct_mail_val >= 80.0), f"{pct_mail_val}%"
                             
             ok_llave5 = (len(df_mes_marca_filtro) >= m_l5)
