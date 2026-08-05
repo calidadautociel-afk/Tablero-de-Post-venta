@@ -1425,4 +1425,3 @@ with tab_reclamos:
                 st.info("No hay detalles registrados para este cruce.")
     else: 
         st.error("Columna 'Fecha Cierre' no encontrada.")
-
