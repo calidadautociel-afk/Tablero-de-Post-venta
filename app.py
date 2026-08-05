@@ -119,12 +119,10 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     mes_actual_nombre = MESES_ES.get(hoy.month, "Enero")
     año_actual = hoy.year
 
-    # Listas disponibles extraídas de los datos
     anios_disp = sorted(df_m_raw['Año'].unique(), reverse=True) if 'Año' in df_m_raw.columns else [año_actual]
     meses_disp = list(MESES_ES.values())
     marcas_disp = sorted(df_m_raw['Marca'].dropna().unique()) if 'Marca' in df_m_raw.columns else []
 
-    # --- LÓGICA DE VALORES POR DEFECTO ---
     default_anio = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
     
     meses_existentes = df_m_raw[df_m_raw['Año'] == default_anio[0]]['Mes'].unique() if default_anio else []
@@ -198,7 +196,7 @@ def calcular_promedio(df, columna):
     if len(valores) == 0: return 0.0
     return round(valores.mean() * 10, 1)
 
-# --- VELOCÍMETROS (ACTUALIZADO AL FORMATO VENTAS) ---
+# --- VELOCÍMETROS ---
 def crear_velocimetro(score, titulo, mini=False, is_promedio=False):
     color_bar = '#22C55E' if score >= 90 else ('#EAB308' if score >= (80 if is_promedio else 70) else '#EF4444')
     font_size = 20 if mini else 42
@@ -392,6 +390,7 @@ def generar_reporte_pdf_bytes(df_m, df_i, meses_seleccionados):
             pdf.cell(0, 7, "Excelente: No se detectan clientes detractores.", ln=True)
             
     return bytes(pdf.output())   
+
 # ==============================================================================
 # TÍTULO PRINCIPAL Y REPORTE CONSOLIDADO
 # ==============================================================================
@@ -401,7 +400,6 @@ with st.expander("📦 Generar y Descargar Reporte Consolidado PDF", expanded=Fa
     st.caption("El reporte tomará los filtros configurados en la pestaña 'Monitor Global'.")
     if st.button("⚙️ Pre-renderizar Informe PDF"):
         try:
-            # Reconstruimos los filtros globales en base al estado del Monitor
             sel_años_pdf = st.session_state.get('monitor_anio', [datetime.date.today().year])
             sel_meses_pdf = st.session_state.get('monitor_mes', [MESES_ES.get(datetime.date.today().month, "Enero")])
             sel_marcas_pdf = st.session_state.get('monitor_marca', [])
@@ -425,6 +423,7 @@ with st.expander("📦 Generar y Descargar Reporte Consolidado PDF", expanded=Fa
             st.error(f"Error al estructurar el PDF: {e}")
 
 st.markdown("<br>", unsafe_allow_html=True)
+
 # ==============================================================================
 # PESTAÑAS PRINCIPALES
 # ==============================================================================
@@ -445,18 +444,12 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_
 with tab_monitor:
     df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
     
-    # ==============================================================================
-    # TENDENCIA ANUAL DE NPS (NUEVO DESPLEGABLE)
-    # ==============================================================================
     with st.expander("📈 Ver anualmente el NPS (Evolución Mensual)", expanded=False):
-        # Tomamos los años seleccionados en el filtro de arriba
         años_seleccionados = st.session_state.get('monitor_anio', [datetime.date.today().year])
         
-        # Filtramos la base cruda SOLO por el año para asegurar traer todos los meses
         df_m_anio_completo = df_marca_raw[df_marca_raw['Año'].isin(años_seleccionados)]
         df_i_anio_completo = df_int_raw[df_int_raw['Año'].isin(años_seleccionados)]
         
-        # Si hay marcas seleccionadas, las respetamos en la tendencia anual
         marcas_seleccionadas = st.session_state.get('monitor_marca', [])
         if marcas_seleccionadas:
             if 'Marca' in df_m_anio_completo.columns:
@@ -468,12 +461,10 @@ with tab_monitor:
         nps_marca_y = []
         nps_interna_y = []
         
-        # Recorremos los meses del 1 al 12 para calcular los resultados
         for m_num in sorted(df_m_anio_completo['Mes_Num'].unique()):
             df_mes_m = df_m_anio_completo[df_m_anio_completo['Mes_Num'] == m_num]
             df_mes_i = df_i_anio_completo[df_i_anio_completo['Mes_Num'] == m_num]
             
-            # Calculamos el NPS correspondiente a ese mes
             score_m = calcular_metricas_nps(df_mes_m, "Q2 - Recomendación - taller")[0] if not df_mes_m.empty else None
             score_i = calcular_metricas_nps(df_mes_i, "1-NPS")[0] if not df_mes_i.empty else None
             
@@ -485,7 +476,6 @@ with tab_monitor:
         if meses_eje_x:
             fig_tendencia = go.Figure()
             
-            # Barra Vertical - Marca
             fig_tendencia.add_trace(go.Bar(
                 x=meses_eje_x, y=nps_marca_y,
                 name="NPS Oficial Marca",
@@ -494,7 +484,6 @@ with tab_monitor:
                 textposition='auto'
             ))
             
-            # Barra Vertical - Interna
             fig_tendencia.add_trace(go.Bar(
                 x=meses_eje_x, y=nps_interna_y,
                 name="NPS Encuesta Interna",
@@ -503,7 +492,6 @@ with tab_monitor:
                 textposition='auto'
             ))
             
-            # Línea de Objetivo del 95%
             fig_tendencia.add_trace(go.Scatter(
                 x=meses_eje_x, y=[95] * len(meses_eje_x),
                 mode='lines',
@@ -528,13 +516,10 @@ with tab_monitor:
             st.info("No se registran datos suficientes en el año seleccionado para calcular la tendencia.")
             
     st.markdown("<br>", unsafe_allow_html=True)
-    # ==============================================================================
-
     st.markdown(f"<div class='sub-title'>Resultados en Paralelo: {', '.join(meses_sel_t1)}</div>", unsafe_allow_html=True)
     
     col_izq, col_der = st.columns(2)
     
-    # === LADO IZQUIERDO: MARCA ===
     with col_izq:
         st.markdown("### 🏢 Datos de Origen: Encuestas de Marca")
         with st.container(border=True):
@@ -591,7 +576,6 @@ with tab_monitor:
         with subtab_contacto:
             st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_m1, "Q19 - Satisfacción con el Contacto")[0], "Q19 - Satisfacción Contacto", mini=True), use_container_width=True)
 
-    # === LADO DERECHO: INTERNA ===
     with col_der:
         st.markdown("### 🎯 Datos de Origen: Encuestas Internas")
         with st.container(border=True):
@@ -634,7 +618,6 @@ with tab_monitor:
         with subtab_contacto_int:
             st.plotly_chart(crear_velocimetro(calcular_metricas_nps(df_i1, "11-Contacto Servicio Oficial")[0], "11-Contacto Oficial", mini=True), use_container_width=True)
 
-    # === TABLA GLOBAL DE COMENTARIOS DOBLE ===
     st.markdown("---")
     st.markdown("### 💬 Comentarios de Clientes")
     col_com_m, col_com_i = st.columns(2)
@@ -644,7 +627,6 @@ with tab_monitor:
             st.markdown(f"**🏢 Marca (Filtro: {st.session_state.filtro_comentarios_marca})**")
             if st.session_state.filtro_comentarios_marca != 'Todos': st.button("🔄 Ver Todos (Marca)", on_click=set_filtro_marca, args=('Todos',))
             
-            # Incorporación de "Verbalización Final" si existe
             cols_verb = [c for c in ["Q3 - Verbalización", "Verbalización Final"] if c in df_m1.columns]
             
             if cols_verb:
@@ -685,7 +667,7 @@ with tab_monitor:
                 else: st.info("Sin comentarios para este segmento.")
 
 # ------------------------------------------------------------------------------
-# 2. TABLA UNIFICADA DE ASESORES (RANKING DUAL)
+# 2. TABLA UNIFICADA DE ASESORES
 # ------------------------------------------------------------------------------
 with tab_tabla:
     st.markdown("### Ranking de Desempeño General de Asesores")
@@ -757,7 +739,6 @@ with tab_ficha:
     if lista_asesores_hist:
         asesor_seleccionado_hist = st.selectbox("Seleccione el Asesor de Servicio para ver su historial:", options=lista_asesores_hist)
         
-        # Filtrado para KPI Acumulado (Usando el df filtrado de la pestaña)
         df_kpi_m = df_t3_m[df_t3_m[col_asesor_key] == asesor_seleccionado_hist] if col_asesor_key else pd.DataFrame()
         df_kpi_i = df_t3_i[df_t3_i["Asesor"] == asesor_seleccionado_hist] if "Asesor" in df_t3_i.columns else pd.DataFrame()
         
@@ -780,7 +761,6 @@ with tab_ficha:
         
         st.markdown("<br>", unsafe_allow_html=True)
         
-        # Filtrado histórico para el gráfico de líneas (usamos todo el raw)
         with st.container(border=True):
             df_hist_ase_m = df_marca_raw[df_marca_raw[col_asesor_key] == asesor_seleccionado_hist] if col_asesor_key else pd.DataFrame()
             df_hist_ase_i = df_int_raw[df_int_raw["Asesor"] == asesor_seleccionado_hist] if "Asesor" in df_int_raw.columns else pd.DataFrame()
@@ -916,18 +896,14 @@ with tab_telemarketer:
             df_mes = df_tele_filtrado[df_tele_filtrado['Mes_Cierre_Num'] == m_num]
             
             if 'Tipo Contacto' in df_mes.columns and 'Contactado' in df_mes.columns:
-                
-                # 1. Numeradores (Filtro por Tipo de Contacto)
                 s_c = df_mes['Tipo Contacto'].fillna('Vacío').astype(str).str.strip()
                 c_wa = len(s_c[s_c == 'Whatsapp'])
                 c_tel = len(s_c[s_c == 'Telefonico'])
-                c_vac = len(s_c[s_c == 'Vacío']) # Se conserva para los tooltips (customdata) del gráfico
+                c_vac = len(s_c[s_c == 'Vacío'])
                 
-                # 2. Denominador Común (Filtro por Estado de Contacto)
                 estados_validos = ['Cerrado sin respuesta', 'Contactado', 'Buzón de voz', 'No Contactado']
                 denominador_comun = df_mes['Contactado'].astype(str).str.strip().isin(estados_validos).sum()
                 
-                # 3. Cálculos de Efectividad (Los 3 comparten el mismo denominador)
                 p_virt = round((c_wa / denominador_comun * 100), 1) if denominador_comun > 0 else None
                 p_hum = round((c_tel / denominador_comun * 100), 1) if denominador_comun > 0 else None
                 p_glob = round(((c_wa + c_tel) / denominador_comun * 100), 1) if denominador_comun > 0 else None
@@ -999,14 +975,12 @@ with tab_prima:
             
             es_2025_post = (anio_prima_sel == 2025 and m_num >= 5)
             es_2026_post = (anio_prima_sel == 2026 and m_num >= 4)
-            es_nuevo_esquema = (anio_prima_sel >= 2026 and m_num >= 7) # NUEVA REGLA DESDE JULIO
+            es_nuevo_esquema = (anio_prima_sel >= 2026 and m_num >= 7)
             
             m_l1, m_l2, m_l5 = (80.5 if es_2025_post else 77.0), (88.0 if es_2025_post else 86.3), (8 if es_2025_post else 10)
             
             if len(df_mes_marca_filtro) == 0:
                 monto_puro_liquidado[m_num] = 0
-                
-                # Ajuste del máximo teórico para meses vacíos
                 if es_nuevo_esquema: max_t = 800000
                 else: max_t = 630000 if es_2026_post else (420000 if es_2025_post else 540000)
                 
@@ -1028,7 +1002,6 @@ with tab_prima:
             score_nps_mes = calcular_metricas_nps(df_mes_marca_filtro, "Q2 - Recomendación - taller")[0]
             ok_llave2 = (score_nps_mes >= m_l2)
             
-            # 3. Mail Válido
             pct_mail_val, ok_llave3, val_l3_display = 0.0, False, "-"
             if not df_email_llave_raw.empty:
                 col_fecha_llave = next((c for c in df_email_llave_raw.columns if 'importaci' in c.lower()), None)
@@ -1076,17 +1049,12 @@ with tab_prima:
             
             m1, m2, m3, m4 = 0, 0, 0, 0
             
-            # --- EVALUACIÓN DE DRIVERS ---
             if es_nuevo_esquema:
-                # NUEVA LÓGICA (A partir de Julio 2026)
                 if score_nps_mes >= 93.5: m1 = 800000
                 elif score_nps_mes >= 88.3: m1 = 600000
-                
                 max_u = 800000
                 lbls = ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad Trabajo (Inactivo)", "🔹 Q7 Cortesía Asesor (Inactivo)", "🔹 Q19 Sat. Contacto (Inactivo)"]
-            
             elif es_2025_post:
-                # LÓGICA HISTÓRICA 2025
                 if score_nps_mes>=93.5: m1=210000
                 elif score_nps_mes>=89.8: m1=160000
                 sq11 = calcular_metricas_nps(df_mes_marca_filtro, "Q11 - Explicación trabajo - costo")[0]
@@ -1099,10 +1067,8 @@ with tab_prima:
                 if sq7>=95.5: m4=52500
                 elif sq7>=93.3: m4=40000
                 max_u, lbls = 420000, ["🔹 Recomendación (Q2)", "🔹 Q11 Explicación Trab.", "🔹 Q8 Competencia Asesor", "🔹 Q7 Cortesía Asesor"]
-            
             else:
                 if not es_2026_post:
-                    # LÓGICA HISTÓRICA ENE-MAR 2026
                     if score_nps_mes>=93.5: m1=270000
                     elif score_nps_mes>=88.3: m1=200000
                     sq12 = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")[0]
@@ -1116,7 +1082,6 @@ with tab_prima:
                     elif sq19>=91.8: m4=40000
                     max_u, lbls = 540000, ["🔹 Recomendación (Q2)", "🔹 Q12 Calidad Trabajo", "🔹 Q7 Cortesía Asesor", "🔹 Q19 Satisfacción Contacto"]
                 else:
-                    # LÓGICA HISTÓRICA ABR-JUN 2026
                     if score_nps_mes>=93.5: m1=310000
                     elif score_nps_mes>=88.3: m1=230000
                     sq12 = calcular_metricas_nps(df_mes_marca_filtro, "Q12 - Calidad del trabajo")[0]
@@ -1162,14 +1127,9 @@ with tab_prima:
             f_calc = d["Liq_S_M"] + m_bonus
             lista_render.append({**d, "Bonus_Display": s_bonus, "Color_B_Style": c_bonus, "Pct_Cumpl": round((d["Liq_S_M"]/max_teorico_acumulado[m]*100),1) if max_teorico_acumulado[m]>0 else 0.0, "Final_M": f_calc, "Perdida_M": max(0, max_teorico_acumulado[m]-f_calc)})
 
-        # ==========================================================
-        # RENDERIZADO HTML (DIVIDIDO PARA EL DESPLEGABLE)
-        # ==========================================================
         if lista_render:
-            # Estilo maestro para fijar el ancho y evitar desalineaciones
             t_style = "width:100%; table-layout:fixed; border-collapse: collapse; text-align: center; font-size: 13px;"
             
-            # --- PARTE 1: TABLA PRINCIPAL Y RECOMENDACIÓN ---
             html_top = f"<table style='{t_style}'><thead><tr style='background-color: #1E293B; color: white;'><th style='padding: 10px; border: 1px solid #E2E8F0; text-align: left;'>Mes</th>"
             for d in lista_render: html_top += f"<th style='padding: 10px; border: 1px solid #E2E8F0;'>{d['Mes_Nombre']}</th>"
             html_top += "</tr></thead><tbody>"
@@ -1196,14 +1156,12 @@ with tab_prima:
             
             html_top += f"<tr style='background-color: #EDF2F7;'><td colspan='{len(lista_render)+1}' style='text-align:left; padding:8px; font-weight:bold;'>🎯 INCENTIVOS COMERCIALES</td></tr>"
             
-            # Fila estática de Recomendación (Siempre visible)
             html_top += f"<tr><td style='padding:10px; border:1px solid #E2E8F0; text-align:left; overflow:hidden;'>{lista_render[0]['Labels'][0]}</td>"
             for d in lista_render: html_top += f"<td style='padding:10px; border:1px solid #E2E8F0;'>${d['V_D1']:,.0f}</td>".replace("$0", "$0")
             html_top += "</tr></tbody></table>"
             
             st.markdown(html_top, unsafe_allow_html=True)
             
-            # --- PARTE 2: DESPLEGABLE DRIVERS DESCONTINUADOS ---
             with st.expander("🔽 Ver Drivers Complementarios (Historial y Descontinuados)", expanded=False):
                 html_mid = f"<table style='{t_style}'><tbody>"
                 for i in range(1, 4):
@@ -1215,7 +1173,6 @@ with tab_prima:
                 html_mid += "</tbody></table>"
                 st.markdown(html_mid, unsafe_allow_html=True)
                 
-            # --- PARTE 3: TOTALES INFERIORES ---
             html_bot = f"<table style='{t_style}'><tbody>"
             html_bot += "<tr style='background-color: #F8FAFC;'><td style='padding: 10px; border: 1px solid #E2E8F0; text-align: left; font-weight: bold; overflow:hidden;'>💰 SUMA DRIVERS (Unitario)</td>"
             for d in lista_render: html_bot += f"<td style='padding: 10px; border: 1px solid #E2E8F0; font-weight: bold; color:#1E3A8A;'>${d['Suma_D_M']:,.0f}</td>".replace("$0", "$0")
@@ -1246,7 +1203,6 @@ with tab_prima:
             st.markdown("#### 💵 Control de Flujo de Caja")
             c_sel1, c_sel2 = st.columns(2)
             
-            # --- NUEVA LÓGICA: AUTO-COMPLETAR MESES COBRADOS (+45 DÍAS) ---
             meses_cobrados_default = []
             hoy = datetime.date.today()
             
@@ -1263,7 +1219,6 @@ with tab_prima:
                     mes_nombre = MESES_ES.get(m_num)
                     if any(x['Mes_Nombre'] == mes_nombre and x['L1_Val'] != '-' for x in lista_render):
                         meses_cobrados_default.append(mes_nombre)
-            # --------------------------------------------------------------
 
             with c_sel1: a_caja = st.selectbox("Año:", options=anios_prima, key="sb_anio_caja")
             with c_sel2: m_caja = st.multiselect("Meses cobrados:", options=list(MESES_ES.values()), default=meses_cobrados_default, key="ms_meses_caja")
@@ -1281,7 +1236,7 @@ with tab_prima:
             c_k1, c_k2, c_k3, c_k4 = st.columns(4)
             c_k1.markdown(f"<div class='kpi-card' style='border-left: 5px solid #10B981;'><div class='kpi-label'>💰 COBRADO</div><div class='kpi-value' style='color:#065F46; font-size: 26px;'>${m_cob:,.0f}</div></div>".replace(",", "."), unsafe_allow_html=True)
             c_k2.markdown(f"<div class='kpi-card' style='border-left: 5px solid #EF4444;'><div class='kpi-label'>📉 PERDIDO</div><div class='kpi-value' style='color:#B91C1C; font-size: 26px;'>${m_perd:,.0f}</div></div>".replace(",", "."), unsafe_allow_html=True)
-            c_k3.markdown(f"<div class='kpi-card' style='border-left: 5px solid #8B5CF6;'><div class='kpi-label'>📊 % ALCANZADO</div><div class='kpi-value' style='color:#5B21B6; font-size: 26px;'>{pct_alc:.1f}%</div></div>", unsafe_allow_html=True)
+            c_k3.markdown(f"<div class='kpi-card' style='border-left: 5px solid #8B5CF6;'><div class='kpi-label'>📊 % ALCANZADO</div><div class='kpi-value' style='color:#5B21B6; font-size: 26px;'>{pct_alc:.1f}%</div></div>".replace(",", "."), unsafe_allow_html=True)
             c_k4.markdown(f"<div class='kpi-card' style='border-left: 5px solid #3B82F6;'><div class='kpi-label'>⏳ PENDIENTE</div><div class='kpi-value' style='color:#1D4ED8; font-size: 26px;'>${m_pend:,.0f}</div></div>".replace(",", "."), unsafe_allow_html=True)
             
             if x_m:
@@ -1317,96 +1272,107 @@ with tab_reclamos:
         df_rec_filtrado = df_rec_a[df_rec_a['Mes_Cierre_Num'].isin(meses_rec_sel)]
         
         st.markdown("---")
-        st.markdown("#### 📈 Evolución Mensual de Reclamos")
-        line_data_rec = []
-        for m_num in m_disp:
-            df_m = df_rec_a[df_rec_a['Mes_Cierre_Num'] == m_num]
-            cr, cc, cv = df_m['Reclamo'].notna().sum() if 'Reclamo' in df_m.columns else 0, df_m['Contactado'].notna().sum() if 'Contactado' in df_m.columns else 0, df_m['Estado'].isna().sum() if 'Estado' in df_m.columns else 0
-            pct = round((cr / (cc + cr) * 100), 1) if (cc + cr) > 0 else 0.0
-            line_data_rec.append({"Mes_Nombre": MESES_ES[m_num], "Mes_Num": m_num, "Pct_Reclamo": pct, "Cant_Reclamo": cr, "Cant_Contactado": cc, "Cant_Vacios": cv})
-            
-        if line_data_rec:
-            df_lr = pd.DataFrame(line_data_rec).sort_values("Mes_Num")
-            fig_l_rec = go.Figure(go.Scatter(x=df_lr['Mes_Nombre'], y=df_lr['Pct_Reclamo'], mode='lines+markers+text', line=dict(color='#EF4444', width=4), text=df_lr['Pct_Reclamo'].apply(lambda x: f"{x}%"), textposition='top center', customdata=df_lr[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values, hovertemplate="<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos: %{customdata[0]}<br>Contactados: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"))
-            fig_l_rec.update_layout(yaxis=dict(title='%', range=[0, max(df_lr['Pct_Reclamo'])+10 if not df_lr.empty else 100]), height=400, hovermode='x unified', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-            st.plotly_chart(fig_l_rec, use_container_width=True)
-            
-            st.markdown("---")
+        
+        col_graf_1, col_graf_2 = st.columns(2)
+        
+        with col_graf_1:
+            st.markdown("#### 📈 Evolución Mensual de Reclamos")
+            line_data_rec = []
+            for m_num in m_disp:
+                df_m = df_rec_a[df_rec_a['Mes_Cierre_Num'] == m_num]
+                cr, cc, cv = df_m['Reclamo'].notna().sum() if 'Reclamo' in df_m.columns else 0, df_m['Contactado'].notna().sum() if 'Contactado' in df_m.columns else 0, df_m['Estado'].isna().sum() if 'Estado' in df_m.columns else 0
+                pct = round((cr / (cc + cr) * 100), 1) if (cc + cr) > 0 else 0.0
+                line_data_rec.append({"Mes_Nombre": MESES_ES[m_num], "Mes_Num": m_num, "Pct_Reclamo": pct, "Cant_Reclamo": cr, "Cant_Contactado": cc, "Cant_Vacios": cv})
+                
+            if line_data_rec:
+                df_lr = pd.DataFrame(line_data_rec).sort_values("Mes_Num")
+                fig_l_rec = go.Figure(go.Scatter(x=df_lr['Mes_Nombre'], y=df_lr['Pct_Reclamo'], mode='lines+markers+text', line=dict(color='#EF4444', width=3), text=df_lr['Pct_Reclamo'].apply(lambda x: f"{x}%"), textposition='top center', customdata=df_lr[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values, hovertemplate="<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos: %{customdata[0]}<br>Contactados: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"))
+                fig_l_rec.update_layout(yaxis=dict(title='%', range=[0, max(df_lr['Pct_Reclamo'])+10 if not df_lr.empty else 100]), height=380, margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                st.plotly_chart(fig_l_rec, use_container_width=True)
+
+        with col_graf_2:
+            st.markdown("#### 🔄 Embudo por Categoría de Reclamo")
             if 'Reclamo' in df_rec_filtrado.columns:
                 df_rc = df_rec_filtrado.dropna(subset=['Reclamo'])
                 if not df_rc.empty:
                     c_rec = df_rc['Reclamo'].value_counts().reset_index()
                     c_rec.columns = ['Categoria', 'Cantidad']
                     fig_f = go.Figure(go.Funnel(y=c_rec['Categoria'], x=c_rec['Cantidad'], textinfo="value+percent initial", marker={"color": ["#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE"] * 10}))
-                    fig_f.update_layout(height=350, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    fig_f.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_f, use_container_width=True)
-                    
-            st.markdown("---")
-            areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
-            cc_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
-            a_stats = {a: {'total': df_rec_filtrado[a].notna().sum(), 'pct': round((df_rec_filtrado[a].notna().sum() / (cc_tot + df_rec_filtrado[a].notna().sum()) * 100), 1) if (cc_tot + df_rec_filtrado[a].notna().sum()) > 0 else 0.0} for a in areas_cols if a in df_rec_filtrado.columns and df_rec_filtrado[a].notna().sum() > 0}
-            
-            f_area, f_cat = None, None
-            if a_stats:
-                s_areas = sorted(list(a_stats.keys()), key=lambda x: a_stats[x]['total'])
-                c_per_a = {a: df_rec_filtrado[a].value_counts() for a in s_areas}
-                all_cats = set()
-                for counts in c_per_a.values(): all_cats.update(counts.index)
-                l_cats = sorted(list(all_cats))
-                
-                fig_ba = go.Figure()
-                for cat in l_cats:
-                    x_v, cd_p = [c_per_a[a].get(cat, 0) for a in s_areas], [a_stats[a]['pct'] for a in s_areas]
-                    if sum(x_v) > 0:
-                        fig_ba.add_trace(go.Bar(
-                            y=s_areas, x=x_v, name=str(cat), orientation='h', 
-                            text=[f"{v}" if v>0 else "" for v in x_v], textposition='inside', 
-                            customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>"
-                        ))
-                fig_ba.update_layout(barmode='stack', height=400 if len(s_areas)>3 else 280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-                st.info("💡 Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
-                
-                try:
-                    event = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
-                    puntos = []
-                    
-                    if hasattr(event, "selection") and hasattr(event.selection, "points"):
-                        puntos = event.selection.points
-                    elif isinstance(event, dict) and "selection" in event:
-                        puntos = event["selection"].get("points", [])
-                        
-                    if puntos:
-                        pto = puntos[0]
-                        f_area = pto.get("y") if isinstance(pto, dict) else getattr(pto, "y", None)
-                        
-                        c_idx = pto.get("curve_number") if isinstance(pto, dict) else getattr(pto, "curve_number", None)
-                        if c_idx is None and isinstance(pto, dict): c_idx = pto.get("curveNumber")
-                        if c_idx is None: c_idx = getattr(pto, "curveNumber", None)
-                        
-                        if c_idx is not None and int(c_idx) < len(fig_ba.data):
-                            f_cat = fig_ba.data[int(c_idx)].name
-                except Exception: 
-                    pass
-                
-            st.markdown("---")
-            st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
-            cols_req = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
-            cols_enc = [next((c for c in df_rec_filtrado.columns if str(c).strip().lower()==str(col).lower()), None) for col in cols_req]
-            cols_enc = [c for c in cols_enc if c]
-            
-            if cols_enc:
-                col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
-                
-                if f_area and f_cat and f_area in df_rec_filtrado.columns:
-                    df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
                 else:
-                    df_t = df_rec_filtrado
-                    
-                df_t = df_t[cols_enc]
-                if col_cc: df_t = df_t.dropna(subset=[col_cc])
+                    st.info("Sin datos para el embudo en este segmento.")
+            else:
+                st.info("Columna 'Reclamo' no encontrada.")
+        
+        st.markdown("---")
+        
+        areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
+        cc_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
+        a_stats = {a: {'total': df_rec_filtrado[a].notna().sum(), 'pct': round((df_rec_filtrado[a].notna().sum() / (cc_tot + df_rec_filtrado[a].notna().sum()) * 100), 1) if (cc_tot + df_rec_filtrado[a].notna().sum()) > 0 else 0.0} for a in areas_cols if a in df_rec_filtrado.columns and df_rec_filtrado[a].notna().sum() > 0}
+        
+        f_area, f_cat = None, None
+        if a_stats:
+            s_areas = sorted(list(a_stats.keys()), key=lambda x: a_stats[x]['total'])
+            c_per_a = {a: df_rec_filtrado[a].value_counts() for a in s_areas}
+            all_cats = set()
+            for counts in c_per_a.values(): all_cats.update(counts.index)
+            l_cats = sorted(list(all_cats))
+            
+            fig_ba = go.Figure()
+            for cat in l_cats:
+                x_v, cd_p = [c_per_a[a].get(cat, 0) for a in s_areas], [a_stats[a]['pct'] for a in s_areas]
+                if sum(x_v) > 0:
+                    fig_ba.add_trace(go.Bar(
+                        y=s_areas, x=x_v, name=str(cat), orientation='h', 
+                        text=[f"{v}" if v>0 else "" for v in x_v], textposition='inside', 
+                        customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>"
+                    ))
+            fig_ba.update_layout(barmode='stack', height=400 if len(s_areas)>3 else 280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            st.info("💡 Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
+            
+            try:
+                event = st.plotly_chart(fig_ba, use_container_width=True, on_select="rerun", selection_mode="points", key="gr_rec")
+                puntos = []
                 
-                if len(df_t) > 0: 
-                    st.dataframe(df_t, use_container_width=True, hide_index=True)
-                else: 
-                    st.info("No hay detalles registrados para este cruce.")
-    else: st.error("Columna 'Fecha Cierre' no encontrada.")
+                if hasattr(event, "selection") and hasattr(event.selection, "points"):
+                    puntos = event.selection.points
+                elif isinstance(event, dict) and "selection" in event:
+                    puntos = event["selection"].get("points", [])
+                    
+                if puntos:
+                    pto = puntos[0]
+                    f_area = pto.get("y") if isinstance(pto, dict) else getattr(pto, "y", None)
+                    
+                    c_idx = pto.get("curve_number") if isinstance(pto, dict) else getattr(pto, "curve_number", None)
+                    if c_idx is None and isinstance(pto, dict): c_idx = pto.get("curveNumber")
+                    if c_idx is None: c_idx = getattr(pto, "curveNumber", None)
+                    
+                    if c_idx is not None and int(c_idx) < len(fig_ba.data):
+                        f_cat = fig_ba.data[int(c_idx)].name
+            except Exception: 
+                pass
+        
+        st.markdown("---")
+        st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
+        cols_req = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
+        cols_enc = [next((c for c in df_rec_filtrado.columns if str(c).strip().lower()==str(col).lower()), None) for col in cols_req]
+        cols_enc = [c for c in cols_enc if c]
+        
+        if cols_enc:
+            col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
+            
+            if f_area and f_cat and f_area in df_rec_filtrado.columns:
+                df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
+            else:
+                df_t = df_rec_filtrado
+                
+            df_t = df_t[cols_enc]
+            if col_cc: df_t = df_t.dropna(subset=[col_cc])
+            
+            if len(df_t) > 0: 
+                st.dataframe(df_t, use_container_width=True, hide_index=True)
+            else: 
+                st.info("No hay detalles registrados para este cruce.")
+    else: 
+        st.error("Columna 'Fecha Cierre' no encontrada.")
