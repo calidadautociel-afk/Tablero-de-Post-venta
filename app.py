@@ -113,7 +113,7 @@ except Exception as e:
 col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' in col), None)
 col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
 
-# --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA (UNIFICADA) ---
+# --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA (UNIFICADA CON SELECTOR INTELIGENTE) ---
 def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
     hoy = datetime.date.today()
     mes_actual_nombre = MESES_ES.get(hoy.month, "Enero")
@@ -155,7 +155,7 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
     with st.expander(titulo_unico, expanded=False):
         # Si se debe mostrar motivo y al menos existe en una de las bases
         if show_motivo and (col_motivo_m or col_motivo_i):
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3, c4 = st.columns([1, 1, 1, 1.8]) # Hacemos la columna del motivo un poco más ancha
             with c1:
                 sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
             with c2:
@@ -163,7 +163,27 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
             with c3:
                 sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
             with c4:
-                sel_motivos = st.multiselect("Motivo de visita (Unificado)", motivos_disp, key=f'{key_prefix}_motivo')
+                st.markdown("<p style='font-size: 13px; margin-bottom: 2px; color: #64748B; font-weight: 600;'>Filtro Inteligente de Motivos</p>", unsafe_allow_html=True)
+                
+                # --- BUSCADOR INTELIGENTE ---
+                col_busq, col_btn = st.columns([2, 1.2])
+                with col_busq:
+                    palabra_clave = st.text_input("Buscar", key=f"{key_prefix}_txt_buscar", label_visibility="collapsed", placeholder="Ej: chapa...")
+                with col_btn:
+                    if st.button("➕ Sel. Todos", help="Selecciona automáticamente todos los motivos que contengan esa palabra"):
+                        if palabra_clave:
+                            # Filtra la lista por la palabra introducida
+                            opciones_filtradas = [m for m in motivos_disp if palabra_clave.lower() in str(m).lower()]
+                            # Suma los nuevos seleccionados a los que ya estaban marcados (evitando repetidos)
+                            actuales = st.session_state.get(f'{key_prefix}_motivo', [])
+                            st.session_state[f'{key_prefix}_motivo'] = list(set(actuales + opciones_filtradas))
+                            # Refresca la app para que el filtro tome el nuevo estado
+                            try:
+                                st.rerun()
+                            except AttributeError:
+                                st.experimental_rerun()
+                
+                sel_motivos = st.multiselect("Motivo de visita (Unificado)", motivos_disp, key=f'{key_prefix}_motivo', label_visibility="collapsed")
         else:
             c1, c2, c3 = st.columns(3)
             with c1:
