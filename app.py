@@ -114,7 +114,7 @@ col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' i
 col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
 
 # --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA ---
-def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
+def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
     hoy = datetime.date.today()
     mes_actual_nombre = MESES_ES.get(hoy.month, "Enero")
     año_actual = hoy.year
@@ -122,6 +122,9 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     anios_disp = sorted(df_m_raw['Año'].unique(), reverse=True) if 'Año' in df_m_raw.columns else [año_actual]
     meses_disp = list(MESES_ES.values())
     marcas_disp = sorted(df_m_raw['Marca'].dropna().unique()) if 'Marca' in df_m_raw.columns else []
+    
+    col_motivo = next((col for col in df_m_raw.columns if 'Q4' in col and 'Motivo' in col), None)
+    motivos_disp = sorted(df_m_raw[col_motivo].dropna().unique()) if col_motivo else []
 
     default_anio = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
     
@@ -138,17 +141,31 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
         st.session_state[f'{key_prefix}_mes'] = default_mes
     if f'{key_prefix}_marca' not in st.session_state:
         st.session_state[f'{key_prefix}_marca'] = default_marca
+    if show_motivo and f'{key_prefix}_motivo' not in st.session_state:
+        st.session_state[f'{key_prefix}_motivo'] = []
 
     titulo_unico = f"⚙️ Filtros de visualización ({key_prefix.replace('_', ' ').title()})"
 
     with st.expander(titulo_unico, expanded=False):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
-        with c2:
-            sel_meses = st.multiselect("Seleccione Mes(es)", meses_disp, key=f'{key_prefix}_mes')
-        with c3:
-            sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
+        if show_motivo and col_motivo:
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
+            with c2:
+                sel_meses = st.multiselect("Seleccione Mes(es)", meses_disp, key=f'{key_prefix}_mes')
+            with c3:
+                sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
+            with c4:
+                sel_motivos = st.multiselect("Motivo de visita (Q4)", motivos_disp, key=f'{key_prefix}_motivo')
+        else:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
+            with c2:
+                sel_meses = st.multiselect("Seleccione Mes(es)", meses_disp, key=f'{key_prefix}_mes')
+            with c3:
+                sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
+            sel_motivos = []
 
     df_m_filt = df_m_raw[df_m_raw['Año'].isin(sel_años) & df_m_raw['Mes'].isin(sel_meses)]
     df_i_filt = df_i_raw[df_i_raw['Año'].isin(sel_años) & df_i_raw['Mes'].isin(sel_meses)]
@@ -156,6 +173,9 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix):
     if sel_marcas:
         if 'Marca' in df_m_filt.columns: df_m_filt = df_m_filt[df_m_filt['Marca'].isin(sel_marcas)]
         if 'Marca' in df_i_filt.columns: df_i_filt = df_i_filt[df_i_filt['Marca'].isin(sel_marcas)]
+
+    if sel_motivos and col_motivo:
+        df_m_filt = df_m_filt[df_m_filt[col_motivo].isin(sel_motivos)]
 
     return df_m_filt, df_i_filt, sel_meses
 
@@ -403,6 +423,7 @@ with st.expander("📦 Generar y Descargar Reporte Consolidado PDF", expanded=Fa
             sel_años_pdf = st.session_state.get('monitor_anio', [datetime.date.today().year])
             sel_meses_pdf = st.session_state.get('monitor_mes', [MESES_ES.get(datetime.date.today().month, "Enero")])
             sel_marcas_pdf = st.session_state.get('monitor_marca', [])
+            sel_motivos_pdf = st.session_state.get('monitor_motivo', [])
             
             df_pdf_m = df_marca_raw[df_marca_raw['Año'].isin(sel_años_pdf) & df_marca_raw['Mes'].isin(sel_meses_pdf)]
             df_pdf_i = df_int_raw[df_int_raw['Año'].isin(sel_años_pdf) & df_int_raw['Mes'].isin(sel_meses_pdf)]
@@ -410,6 +431,9 @@ with st.expander("📦 Generar y Descargar Reporte Consolidado PDF", expanded=Fa
             if sel_marcas_pdf:
                 if 'Marca' in df_pdf_m.columns: df_pdf_m = df_pdf_m[df_pdf_m['Marca'].isin(sel_marcas_pdf)]
                 if 'Marca' in df_pdf_i.columns: df_pdf_i = df_pdf_i[df_pdf_i['Marca'].isin(sel_marcas_pdf)]
+                
+            if sel_motivos_pdf and col_q4:
+                df_pdf_m = df_pdf_m[df_pdf_m[col_q4].isin(sel_motivos_pdf)]
 
             with st.spinner("Compilando datos de todas las areas..."):
                 data_pdf = generar_reporte_pdf_bytes(df_pdf_m, df_pdf_i, sel_meses_pdf)
@@ -442,7 +466,7 @@ tab_monitor, tab_tabla, tab_ficha, tab_carga, tab_quejas, tab_telemarketer, tab_
 # 1. MONITOR GLOBAL COMPARATIVO
 # ------------------------------------------------------------------------------
 with tab_monitor:
-    df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor")
+    df_m1, df_i1, meses_sel_t1 = render_filtros_pestaña(df_marca_raw, df_int_raw, "monitor", show_motivo=True)
     
     with st.expander("📈 Ver anualmente el NPS (Evolución Mensual)", expanded=False):
         años_seleccionados = st.session_state.get('monitor_anio', [datetime.date.today().year])
@@ -451,11 +475,16 @@ with tab_monitor:
         df_i_anio_completo = df_int_raw[df_int_raw['Año'].isin(años_seleccionados)]
         
         marcas_seleccionadas = st.session_state.get('monitor_marca', [])
+        motivos_seleccionados = st.session_state.get('monitor_motivo', [])
+        
         if marcas_seleccionadas:
             if 'Marca' in df_m_anio_completo.columns:
                 df_m_anio_completo = df_m_anio_completo[df_m_anio_completo['Marca'].isin(marcas_seleccionadas)]
             if 'Marca' in df_i_anio_completo.columns:
                 df_i_anio_completo = df_i_anio_completo[df_i_anio_completo['Marca'].isin(marcas_seleccionadas)]
+
+        if motivos_seleccionados and col_q4:
+            df_m_anio_completo = df_m_anio_completo[df_m_anio_completo[col_q4].isin(motivos_seleccionados)]
 
         meses_eje_x = []
         nps_marca_y = []
