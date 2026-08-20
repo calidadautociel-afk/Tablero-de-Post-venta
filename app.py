@@ -113,7 +113,7 @@ except Exception as e:
 col_q4 = next((col for col in df_marca_raw.columns if 'Q4' in col and 'Motivo' in col), None)
 col_q13 = next((col for col in df_marca_raw.columns if 'Q13' in col), "Q13 - Trabajo realizado en primera visita")
 
-# --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA ---
+# --- FUNCIÓN DE FILTRADO LOCAL POR PESTAÑA (UNIFICADA) ---
 def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
     hoy = datetime.date.today()
     mes_actual_nombre = MESES_ES.get(hoy.month, "Enero")
@@ -123,8 +123,14 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
     meses_disp = list(MESES_ES.values())
     marcas_disp = sorted(df_m_raw['Marca'].dropna().unique()) if 'Marca' in df_m_raw.columns else []
     
-    col_motivo = next((col for col in df_m_raw.columns if 'Q4' in col and 'Motivo' in col), None)
-    motivos_disp = sorted(df_m_raw[col_motivo].dropna().unique()) if col_motivo else []
+    # Identificar columnas de motivo en ambas bases
+    col_motivo_m = next((col for col in df_m_raw.columns if 'Q4' in col and 'Motivo' in col), None)
+    col_motivo_i = next((col for col in df_i_raw.columns if 'Motivo' in col), None)
+
+    # Extraer y combinar valores únicos (sin nulos)
+    motivos_m = df_m_raw[col_motivo_m].dropna().unique().tolist() if col_motivo_m else []
+    motivos_i = df_i_raw[col_motivo_i].dropna().unique().tolist() if col_motivo_i else []
+    motivos_disp = sorted(list(set(motivos_m + motivos_i))) # Unifica y elimina duplicados
 
     default_anio = [año_actual] if año_actual in anios_disp else (anios_disp[:1] if anios_disp else [2026])
     
@@ -147,7 +153,8 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
     titulo_unico = f"⚙️ Filtros de visualización ({key_prefix.replace('_', ' ').title()})"
 
     with st.expander(titulo_unico, expanded=False):
-        if show_motivo and col_motivo:
+        # Si se debe mostrar motivo y al menos existe en una de las bases
+        if show_motivo and (col_motivo_m or col_motivo_i):
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 sel_años = st.multiselect("Seleccione Año", anios_disp, key=f'{key_prefix}_anio')
@@ -156,7 +163,7 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
             with c3:
                 sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
             with c4:
-                sel_motivos = st.multiselect("Motivo de visita (Q4)", motivos_disp, key=f'{key_prefix}_motivo')
+                sel_motivos = st.multiselect("Motivo de visita (Unificado)", motivos_disp, key=f'{key_prefix}_motivo')
         else:
             c1, c2, c3 = st.columns(3)
             with c1:
@@ -167,6 +174,7 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
                 sel_marcas = st.multiselect("Seleccione Marca", marcas_disp, key=f'{key_prefix}_marca')
             sel_motivos = []
 
+    # Aplicar filtros de fecha y marca
     df_m_filt = df_m_raw[df_m_raw['Año'].isin(sel_años) & df_m_raw['Mes'].isin(sel_meses)]
     df_i_filt = df_i_raw[df_i_raw['Año'].isin(sel_años) & df_i_raw['Mes'].isin(sel_meses)]
 
@@ -174,8 +182,12 @@ def render_filtros_pestaña(df_m_raw, df_i_raw, key_prefix, show_motivo=False):
         if 'Marca' in df_m_filt.columns: df_m_filt = df_m_filt[df_m_filt['Marca'].isin(sel_marcas)]
         if 'Marca' in df_i_filt.columns: df_i_filt = df_i_filt[df_i_filt['Marca'].isin(sel_marcas)]
 
-    if sel_motivos and col_motivo:
-        df_m_filt = df_m_filt[df_m_filt[col_motivo].isin(sel_motivos)]
+    # Aplicar filtro unificado de motivo a ambas bases
+    if sel_motivos:
+        if col_motivo_m and col_motivo_m in df_m_filt.columns:
+            df_m_filt = df_m_filt[df_m_filt[col_motivo_m].isin(sel_motivos)]
+        if col_motivo_i and col_motivo_i in df_i_filt.columns:
+            df_i_filt = df_i_filt[df_i_filt[col_motivo_i].isin(sel_motivos)]
 
     return df_m_filt, df_i_filt, sel_meses
 
@@ -432,8 +444,13 @@ with st.expander("📦 Generar y Descargar Reporte Consolidado PDF", expanded=Fa
                 if 'Marca' in df_pdf_m.columns: df_pdf_m = df_pdf_m[df_pdf_m['Marca'].isin(sel_marcas_pdf)]
                 if 'Marca' in df_pdf_i.columns: df_pdf_i = df_pdf_i[df_pdf_i['Marca'].isin(sel_marcas_pdf)]
                 
-            if sel_motivos_pdf and col_q4:
-                df_pdf_m = df_pdf_m[df_pdf_m[col_q4].isin(sel_motivos_pdf)]
+            # Aplicar filtro de motivos al PDF si existe selección
+            if sel_motivos_pdf:
+                if col_q4 and col_q4 in df_pdf_m.columns:
+                    df_pdf_m = df_pdf_m[df_pdf_m[col_q4].isin(sel_motivos_pdf)]
+                col_motivo_i_pdf = next((col for col in df_pdf_i.columns if 'Motivo' in col), None)
+                if col_motivo_i_pdf and col_motivo_i_pdf in df_pdf_i.columns:
+                    df_pdf_i = df_pdf_i[df_pdf_i[col_motivo_i_pdf].isin(sel_motivos_pdf)]
 
             with st.spinner("Compilando datos de todas las areas..."):
                 data_pdf = generar_reporte_pdf_bytes(df_pdf_m, df_pdf_i, sel_meses_pdf)
@@ -483,8 +500,13 @@ with tab_monitor:
             if 'Marca' in df_i_anio_completo.columns:
                 df_i_anio_completo = df_i_anio_completo[df_i_anio_completo['Marca'].isin(marcas_seleccionadas)]
 
-        if motivos_seleccionados and col_q4:
-            df_m_anio_completo = df_m_anio_completo[df_m_anio_completo[col_q4].isin(motivos_seleccionados)]
+        # Aplicar el motivo al gráfico anual si está seleccionado
+        if motivos_seleccionados:
+            if col_q4 and col_q4 in df_m_anio_completo.columns:
+                df_m_anio_completo = df_m_anio_completo[df_m_anio_completo[col_q4].isin(motivos_seleccionados)]
+            col_motivo_i_graf = next((col for col in df_i_anio_completo.columns if 'Motivo' in col), None)
+            if col_motivo_i_graf and col_motivo_i_graf in df_i_anio_completo.columns:
+                df_i_anio_completo = df_i_anio_completo[df_i_anio_completo[col_motivo_i_graf].isin(motivos_seleccionados)]
 
         meses_eje_x = []
         nps_marca_y = []
