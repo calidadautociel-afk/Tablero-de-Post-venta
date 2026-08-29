@@ -1097,7 +1097,7 @@ with tab_prima:
                         if col_rechazo:
                             razones_validas_penalizables = [
                                 "NoContactProvided",
-                                "Correo electronico/telefono ausente;Correo electronico/telefono Inválido",
+                                "Correo electrónico/teléfono ausente;Correo electrónico/teléfono Inválido",
                                 "Correo electrónico/teléfono Inválido",
                                 "Email /phone missing",
                                 "Email /phone missing;Invalid email / phone",
