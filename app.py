@@ -1319,26 +1319,30 @@ with tab_prima:
                 st.plotly_chart(fig_ec, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# 8. PESTAÑA: ANÁLISIS DE RECLAMOS
+# 8. PESTAÑA: ANÁLISIS DE RECLAMOS (Actualizada con nuevas categorías)
 # ------------------------------------------------------------------------------
 with tab_reclamos:
-    st.markdown("### 📋 Análisis de Reclamos")
-    df_rec_base = df_reclamos_raw.copy()
-    if 'Fecha Cierre' in df_rec_base.columns:
-        df_rec_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_rec_base['Fecha Cierre'], dayfirst=True, errors='coerce')
-        df_rec_base['Año_Cierre'] = df_rec_base['Fecha_Cierre_Clean'].dt.year
-        df_rec_base['Mes_Cierre_Num'] = df_rec_base['Fecha_Cierre_Clean'].dt.month
-        df_rec_base = df_rec_base.dropna(subset=['Año_Cierre', 'Mes_Cierre_Num'])
-        df_rec_base['Año_Cierre'] = df_rec_base['Año_Cierre'].astype(int)
-        df_rec_base['Mes_Cierre_Num'] = df_rec_base['Mes_Cierre_Num'].astype(int)
+    st.markdown("### 📋 Análisis de Reclamos y Categorización")
+    
+    df_rec_base = df_int_raw.copy()
+    
+    # Buscamos la columna de fecha adecuada
+    col_fecha_rec = 'Fecha Cierre' if 'Fecha Cierre' in df_rec_base.columns else ('Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_rec_base.columns else 'Marca temporal')
+    
+    if col_fecha_rec in df_rec_base.columns:
+        df_rec_base['Fecha_Cierre_Clean'] = pd.to_datetime(df_rec_base[col_fecha_rec], dayfirst=True, errors='coerce')
+        df_rec_base['Año_Cierre'] = df_rec_base['Fecha_Cierre_Clean'].dt.year.fillna(2026).astype(int)
+        df_rec_base['Mes_Cierre_Num'] = df_rec_base['Fecha_Cierre_Clean'].dt.month.fillna(5).astype(int)
         
         with st.expander("⚙️ Filtros de Reclamos", expanded=False):
             col_r1, col_r2 = st.columns(2)
-            with col_r1: anio_rec_sel = st.selectbox("Año:", options=sorted(df_rec_base['Año_Cierre'].unique(), reverse=True), key="sb_anio_rec")
+            with col_r1: 
+                anios_disp = sorted(df_rec_base['Año_Cierre'].unique(), reverse=True)
+                anio_rec_sel = st.selectbox("Año:", options=anios_disp, key="sb_anio_rec") if anios_disp else 2026
             with col_r2: 
                 df_rec_a = df_rec_base[df_rec_base['Año_Cierre'] == anio_rec_sel]
                 m_disp = sorted(df_rec_a['Mes_Cierre_Num'].unique())
-                meses_rec_sel = st.multiselect("Mes(es):", options=m_disp, format_func=lambda x: MESES_ES[x], default=m_disp, key="ms_mes_rec")
+                meses_rec_sel = st.multiselect("Mes(es):", options=m_disp, format_func=lambda x: MESES_ES.get(x, str(x)), default=m_disp, key="ms_mes_rec")
         
         df_rec_filtrado = df_rec_a[df_rec_a['Mes_Cierre_Num'].isin(meses_rec_sel)]
         
@@ -1346,40 +1350,57 @@ with tab_reclamos:
         
         col_graf_1, col_graf_2 = st.columns(2)
         
+        # Variables actualizadas a la nueva estructura
+        col_rec_emb = 'Reclamo' if 'Reclamo' in df_rec_filtrado.columns else None
+        col_cont_area = 'Estado' if 'Estado' in df_rec_filtrado.columns else ('Contactado' if 'Contactado' in df_rec_filtrado.columns else None)
+        
         with col_graf_1:
             st.markdown("#### 📈 Evolución Mensual de Reclamos")
             line_data_rec = []
             for m_num in m_disp:
                 df_m = df_rec_a[df_rec_a['Mes_Cierre_Num'] == m_num]
-                cr, cc, cv = df_m['Reclamo'].notna().sum() if 'Reclamo' in df_m.columns else 0, df_m['Contactado'].notna().sum() if 'Contactado' in df_m.columns else 0, df_m['Estado'].isna().sum() if 'Estado' in df_m.columns else 0
-                pct = round((cr / (cc + cr) * 100), 1) if (cc + cr) > 0 else 0.0
-                line_data_rec.append({"Mes_Nombre": MESES_ES[m_num], "Mes_Num": m_num, "Pct_Reclamo": pct, "Cant_Reclamo": cr, "Cant_Contactado": cc, "Cant_Vacios": cv})
+                
+                # Para el gráfico, contamos como reclamo los que NO son "Sin encuesta" ni "Sin reclamo / Conforme"
+                cr = 0
+                if col_rec_emb:
+                    cr = df_m[~df_m[col_rec_emb].astype(str).str.contains('Sin encuesta|Sin reclamo', case=False, na=True)][col_rec_emb].notna().sum()
+                
+                cc = df_m[col_cont_area].notna().sum() if col_cont_area else len(df_m)
+                cv = df_m[col_cont_area].isna().sum() if col_cont_area else 0
+                
+                pct = round((cr / cc * 100), 1) if cc > 0 else 0.0 
+                line_data_rec.append({"Mes_Nombre": MESES_ES.get(m_num, str(m_num)), "Mes_Num": m_num, "Pct_Reclamo": pct, "Cant_Reclamo": cr, "Cant_Contactado": cc, "Cant_Vacios": cv})
                 
             if line_data_rec:
                 df_lr = pd.DataFrame(line_data_rec).sort_values("Mes_Num")
-                fig_l_rec = go.Figure(go.Scatter(x=df_lr['Mes_Nombre'], y=df_lr['Pct_Reclamo'], mode='lines+markers+text', line=dict(color='#EF4444', width=3), text=df_lr['Pct_Reclamo'].apply(lambda x: f"{x}%"), textposition='top center', customdata=df_lr[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values, hovertemplate="<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos: %{customdata[0]}<br>Contactados: %{customdata[1]}<br>Vacíos: %{customdata[2]}<extra></extra>"))
+                fig_l_rec = go.Figure(go.Scatter(x=df_lr['Mes_Nombre'], y=df_lr['Pct_Reclamo'], mode='lines+markers+text', line=dict(color='#EF4444', width=3), text=df_lr['Pct_Reclamo'].apply(lambda x: f"{x}%"), textposition='top center', customdata=df_lr[['Cant_Reclamo', 'Cant_Contactado', 'Cant_Vacios']].values, hovertemplate="<b>%{x}</b><br>% Reclamos: %{y}%<br>Reclamos puros: %{customdata[0]}<br>Total Base: %{customdata[1]}<br>Vacíos/Sin Estado: %{customdata[2]}<extra></extra>"))
                 fig_l_rec.update_layout(yaxis=dict(title='%', range=[0, max(df_lr['Pct_Reclamo'])+10 if not df_lr.empty else 100]), height=380, margin=dict(l=10, r=10, t=30, b=10), hovermode='x unified', paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                 st.plotly_chart(fig_l_rec, use_container_width=True)
 
         with col_graf_2:
-            st.markdown("#### 🔄 Embudo por Categoría de Reclamo")
-            if 'Reclamo' in df_rec_filtrado.columns:
-                df_rc = df_rec_filtrado.dropna(subset=['Reclamo'])
-                if not df_rc.empty:
-                    c_rec = df_rc['Reclamo'].value_counts().reset_index()
+            st.markdown("#### 🔄 Embudo por Categoría de Reclamo (Principal)")
+            if col_rec_emb:
+                # Filtramos "Sin reclamo" y "Sin encuesta" para tener un embudo limpio
+                df_rc = df_rec_filtrado.dropna(subset=[col_rec_emb])
+                df_rc_validos = df_rc[~df_rc[col_rec_emb].astype(str).str.contains('Sin encuesta|Sin reclamo', case=False, na=False)]
+                
+                if not df_rc_validos.empty:
+                    c_rec = df_rc_validos[col_rec_emb].value_counts().reset_index()
                     c_rec.columns = ['Categoria', 'Cantidad']
                     fig_f = go.Figure(go.Funnel(y=c_rec['Categoria'], x=c_rec['Cantidad'], textinfo="value+percent initial", marker={"color": ["#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#DBEAFE"] * 10}))
                     fig_f.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_f, use_container_width=True)
                 else:
-                    st.info("Sin datos para el embudo en este segmento.")
+                    st.info("No hay reclamos válidos registrados en este período para graficar.")
             else:
-                st.info("Columna 'Reclamo' no encontrada.")
+                st.warning("⚠️ No se detectó la columna 'Reclamo'.")
         
         st.markdown("---")
         
+        # --- ZONA DE GRÁFICO DE ÁREAS ---
         areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
-        cc_tot = df_rec_filtrado['Contactado'].notna().sum() if 'Contactado' in df_rec_filtrado.columns else 0
+        cc_tot = df_rec_filtrado[col_cont_area].notna().sum() if col_cont_area else len(df_rec_filtrado)
+        
         a_stats = {a: {'total': df_rec_filtrado[a].notna().sum(), 'pct': round((df_rec_filtrado[a].notna().sum() / (cc_tot + df_rec_filtrado[a].notna().sum()) * 100), 1) if (cc_tot + df_rec_filtrado[a].notna().sum()) > 0 else 0.0} for a in areas_cols if a in df_rec_filtrado.columns and df_rec_filtrado[a].notna().sum() > 0}
         
         f_area, f_cat = None, None
@@ -1397,7 +1418,7 @@ with tab_reclamos:
                     fig_ba.add_trace(go.Bar(
                         y=s_areas, x=x_v, name=str(cat), orientation='h', 
                         text=[f"{v}" if v>0 else "" for v in x_v], textposition='inside', 
-                        customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Falla:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>% Reclamo:</b> %{customdata}%<extra></extra>"
+                        customdata=cd_p, hovertemplate="<b>Área:</b> %{y}<br><b>Dato:</b> " + str(cat) + "<br><b>Cant:</b> %{x}<br><b>%:</b> %{customdata}%<extra></extra>"
                     ))
             fig_ba.update_layout(barmode='stack', height=400 if len(s_areas)>3 else 280, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             st.info("💡 Haz clic en cualquier bloque de color del gráfico para filtrar la tabla de abajo. (Doble clic para borrar el filtro).")
@@ -1414,7 +1435,6 @@ with tab_reclamos:
                 if puntos:
                     pto = puntos[0]
                     f_area = pto.get("y") if isinstance(pto, dict) else getattr(pto, "y", None)
-                    
                     c_idx = pto.get("curve_number") if isinstance(pto, dict) else getattr(pto, "curve_number", None)
                     if c_idx is None and isinstance(pto, dict): c_idx = pto.get("curveNumber")
                     if c_idx is None: c_idx = getattr(pto, "curveNumber", None)
@@ -1426,9 +1446,20 @@ with tab_reclamos:
         
         st.markdown("---")
         st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
-        cols_req = ["Fecha Cierre", "cliente", "Teléfono", "Asesor", "N° Orden", "Motivo", "Tipo Orden", "CONCATENADO"]
-        cols_enc = [next((c for c in df_rec_filtrado.columns if str(c).strip().lower()==str(col).lower()), None) for col in cols_req]
-        cols_enc = [c for c in cols_enc if c]
+        
+        # --- NUEVAS COLUMNAS AGREGADAS AQUÍ ---
+        cols_req = [
+            "Fecha Cierre", "Cliente", "Teléfono", "Asesor", 
+            "Aspecto Positivo 1 (Principal)", "Aspecto Positivo 2 (Secundario)",
+            "Reclamo", "Categoría 2 (Secundaria)", "Categoría 3 (Terciaria)",
+            "Estado", "CONCATENADO"
+        ]
+        
+        cols_enc = []
+        for col in cols_req:
+            match = next((c for c in df_rec_filtrado.columns if str(c).strip().lower() == str(col).lower()), None)
+            if match:
+                cols_enc.append(match)
         
         if cols_enc:
             col_cc = next((c for c in cols_enc if 'concat' in str(c).lower()), None)
@@ -1436,7 +1467,11 @@ with tab_reclamos:
             if f_area and f_cat and f_area in df_rec_filtrado.columns:
                 df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
             else:
-                df_t = df_rec_filtrado
+                # Si no hay filtro de área, por limpieza ocultamos los "Sin encuesta"
+                if col_rec_emb:
+                    df_t = df_rec_filtrado[~df_rec_filtrado[col_rec_emb].astype(str).str.contains('Sin encuesta', case=False, na=False)]
+                else:
+                    df_t = df_rec_filtrado
                 
             df_t = df_t[cols_enc]
             if col_cc: df_t = df_t.dropna(subset=[col_cc])
@@ -1444,6 +1479,8 @@ with tab_reclamos:
             if len(df_t) > 0: 
                 st.dataframe(df_t, use_container_width=True, hide_index=True)
             else: 
-                st.info("No hay detalles registrados para este cruce.")
+                st.info("No hay detalles registrados para mostrar.")
+        else:
+            st.warning("No se encontraron las columnas necesarias para mostrar la tabla de detalle.")
     else: 
-        st.error("Columna 'Fecha Cierre' no encontrada.")
+        st.error("Columna de fecha ('Fecha Cierre' o similar) no encontrada en la hoja ENC. INTERNA QUALITY.")
