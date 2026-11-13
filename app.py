@@ -1318,15 +1318,17 @@ with tab_prima:
                 fig_ec.update_layout(hovermode='x unified', height=420, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_ec, use_container_width=True)
 
+
 # ------------------------------------------------------------------------------
-# 8. PESTAÑA: ANÁLISIS DE RECLAMOS (Actualizada con nuevas categorías)
+# 8. PESTAÑA: ANÁLISIS DE RECLAMOS Y CATEGORIZACIÓN (Encuesta Interna)
 # ------------------------------------------------------------------------------
 with tab_reclamos:
     st.markdown("### 📋 Análisis de Reclamos y Categorización")
     
+    # 1. Utilizamos la base de datos de Encuesta Interna
     df_rec_base = df_int_raw.copy()
     
-    # Buscamos la columna de fecha adecuada
+    # 2. Buscamos la columna de fecha adecuada
     col_fecha_rec = 'Fecha Cierre' if 'Fecha Cierre' in df_rec_base.columns else ('Fecha de la Encuesta' if 'Fecha de la Encuesta' in df_rec_base.columns else 'Marca temporal')
     
     if col_fecha_rec in df_rec_base.columns:
@@ -1348,10 +1350,12 @@ with tab_reclamos:
         
         st.markdown("---")
         
-        col_graf_1, col_graf_2 = st.columns(2)
+        # 3. División en 3 columnas para los gráficos superiores
+        col_graf_1, col_graf_2, col_graf_3 = st.columns(3)
         
-        # Variables actualizadas a la nueva estructura
+        # Variables de mapeo de columnas clave
         col_rec_emb = 'Reclamo' if 'Reclamo' in df_rec_filtrado.columns else None
+        col_pos_emb = 'Aspecto Positivo 1 (Principal)' if 'Aspecto Positivo 1 (Principal)' in df_rec_filtrado.columns else None
         col_cont_area = 'Estado' if 'Estado' in df_rec_filtrado.columns else ('Contactado' if 'Contactado' in df_rec_filtrado.columns else None)
         
         with col_graf_1:
@@ -1378,7 +1382,7 @@ with tab_reclamos:
                 st.plotly_chart(fig_l_rec, use_container_width=True)
 
         with col_graf_2:
-            st.markdown("#### 🔄 Embudo por Categoría de Reclamo (Principal)")
+            st.markdown("#### 🔄 Embudo de Reclamos (Principal)")
             if col_rec_emb:
                 # Filtramos "Sin reclamo" y "Sin encuesta" para tener un embudo limpio
                 df_rc = df_rec_filtrado.dropna(subset=[col_rec_emb])
@@ -1391,13 +1395,32 @@ with tab_reclamos:
                     fig_f.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
                     st.plotly_chart(fig_f, use_container_width=True)
                 else:
-                    st.info("No hay reclamos válidos registrados en este período para graficar.")
+                    st.info("No hay reclamos válidos registrados en este período.")
             else:
                 st.warning("⚠️ No se detectó la columna 'Reclamo'.")
+
+        with col_graf_3:
+            st.markdown("#### 🌟 Embudo de Aspectos Positivos")
+            if col_pos_emb:
+                # Filtramos "Sin encuesta" y "Sin comentario" para limpiar el embudo
+                df_pos = df_rec_filtrado.dropna(subset=[col_pos_emb])
+                df_pos_validos = df_pos[~df_pos[col_pos_emb].astype(str).str.contains('Sin encuesta|Sin comentario', case=False, na=False)]
+                
+                if not df_pos_validos.empty:
+                    c_pos = df_pos_validos[col_pos_emb].value_counts().reset_index()
+                    c_pos.columns = ['Categoria', 'Cantidad']
+                    # Usamos una paleta de colores verdes
+                    fig_p = go.Figure(go.Funnel(y=c_pos['Categoria'], x=c_pos['Cantidad'], textinfo="value+percent initial", marker={"color": ["#10B981", "#34D399", "#6EE7B7", "#A7F3D0", "#D1FAE5"] * 10}))
+                    fig_p.update_layout(height=380, margin=dict(l=10, r=10, t=30, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                    st.plotly_chart(fig_p, use_container_width=True)
+                else:
+                    st.info("No hay aspectos positivos registrados en este período.")
+            else:
+                st.warning("⚠️ No se detectó la columna 'Aspecto Positivo 1 (Principal)'.")
         
         st.markdown("---")
         
-        # --- ZONA DE GRÁFICO DE ÁREAS ---
+        # 4. ZONA DE GRÁFICO DE ÁREAS (Apilado)
         areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
         cc_tot = df_rec_filtrado[col_cont_area].notna().sum() if col_cont_area else len(df_rec_filtrado)
         
@@ -1447,7 +1470,7 @@ with tab_reclamos:
         st.markdown("---")
         st.markdown(f"#### 📋 Detalle de Reclamos Operativos ({f'Filtrado: {f_area} ➔ {f_cat}' if f_area and f_cat else 'Visualizando Todos'})")
         
-        # --- NUEVAS COLUMNAS AGREGADAS AQUÍ ---
+        # 5. TABLA DE DETALLES (Con las nuevas columnas)
         cols_req = [
             "Fecha Cierre", "Cliente", "Teléfono", "Asesor", 
             "Aspecto Positivo 1 (Principal)", "Aspecto Positivo 2 (Secundario)",
@@ -1467,7 +1490,7 @@ with tab_reclamos:
             if f_area and f_cat and f_area in df_rec_filtrado.columns:
                 df_t = df_rec_filtrado[df_rec_filtrado[f_area].astype(str).str.strip() == str(f_cat).strip()]
             else:
-                # Si no hay filtro de área, por limpieza ocultamos los "Sin encuesta"
+                # Si no hay filtro de área, ocultamos los "Sin encuesta" para mayor limpieza visual
                 if col_rec_emb:
                     df_t = df_rec_filtrado[~df_rec_filtrado[col_rec_emb].astype(str).str.contains('Sin encuesta', case=False, na=False)]
                 else:
@@ -1479,7 +1502,7 @@ with tab_reclamos:
             if len(df_t) > 0: 
                 st.dataframe(df_t, use_container_width=True, hide_index=True)
             else: 
-                st.info("No hay detalles registrados para mostrar.")
+                st.info("No hay detalles registrados para mostrar en este segmento.")
         else:
             st.warning("No se encontraron las columnas necesarias para mostrar la tabla de detalle.")
     else: 
