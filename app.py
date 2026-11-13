@@ -1318,7 +1318,6 @@ with tab_prima:
                 fig_ec.update_layout(hovermode='x unified', height=420, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
                 st.plotly_chart(fig_ec, use_container_width=True)
 
-
 # ------------------------------------------------------------------------------
 # 8. PESTAÑA: ANÁLISIS DE RECLAMOS Y CATEGORIZACIÓN (Encuesta Interna)
 # ------------------------------------------------------------------------------
@@ -1420,6 +1419,47 @@ with tab_reclamos:
         
         st.markdown("---")
         
+        # --- NUEVA SECCIÓN: DESGLOSE MENSUAL DE RECLAMOS ---
+        with st.expander("📊 Ver desglose mensual detallado (% y Cantidad por Categoría de Reclamo)", expanded=False):
+            if col_rec_emb:
+                # 1. Filtramos para quedarnos solo con reclamos puros (quitamos vacíos, "Sin encuesta" y "Sin reclamo")
+                df_reclamos_puros = df_rec_filtrado.dropna(subset=[col_rec_emb])
+                df_reclamos_puros = df_reclamos_puros[~df_reclamos_puros[col_rec_emb].astype(str).str.contains('Sin encuesta|Sin reclamo', case=False, na=False)]
+                
+                if not df_reclamos_puros.empty:
+                    # 2. Agrupamos por mes y por categoría de reclamo
+                    agrupado = df_reclamos_puros.groupby(['Mes_Cierre_Num', col_rec_emb]).size().reset_index(name='Cantidad')
+                    
+                    # 3. Calculamos el total de reclamos por mes para sacar los porcentajes
+                    totales_mes = agrupado.groupby('Mes_Cierre_Num')['Cantidad'].sum().reset_index(name='Total_Mes')
+                    agrupado = agrupado.merge(totales_mes, on='Mes_Cierre_Num')
+                    agrupado['Porcentaje'] = round((agrupado['Cantidad'] / agrupado['Total_Mes']) * 100, 1)
+                    
+                    # 4. Mapeamos el número del mes a su nombre en español
+                    agrupado['Mes'] = agrupado['Mes_Cierre_Num'].map(MESES_ES)
+                    
+                    # 5. Formateamos cómo queremos que se vea en la tabla (ej. "5 (25.0%)")
+                    agrupado['Cant_y_Pct'] = agrupado.apply(lambda row: f"{row['Cantidad']} ({row['Porcentaje']}%)", axis=1)
+                    
+                    # 6. Pivotamos la tabla para que los meses sean las columnas y las categorías las filas
+                    tabla_pivot = agrupado.pivot(index=col_rec_emb, columns='Mes', values='Cant_y_Pct').fillna('0 (0.0%)')
+                    
+                    # Ordenamos las columnas según el orden lógico de los meses (de enero a diciembre)
+                    meses_ordenados = [MESES_ES[m] for m in sorted(agrupado['Mes_Cierre_Num'].unique()) if MESES_ES[m] in tabla_pivot.columns]
+                    tabla_pivot = tabla_pivot[meses_ordenados]
+                    
+                    # Renombramos el índice para que se vea bien en Streamlit
+                    tabla_pivot.index.name = 'Categoría de Reclamo'
+                    
+                    # Mostramos la tabla
+                    st.dataframe(tabla_pivot, use_container_width=True)
+                else:
+                    st.info("No hay reclamos válidos en este período para generar el desglose.")
+            else:
+                st.warning("No se detectó la columna de Reclamos para generar el desglose mensual.")
+                
+        st.markdown("---")
+
         # 4. ZONA DE GRÁFICO DE ÁREAS (Apilado)
         areas_cols = ['Cita', 'Servicio', 'Taller', 'Repuesto', 'Lavadero', 'Garantia', 'Gestion', 'Taller Cenoa']
         cc_tot = df_rec_filtrado[col_cont_area].notna().sum() if col_cont_area else len(df_rec_filtrado)
